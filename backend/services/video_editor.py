@@ -33,8 +33,8 @@ def supports_ass_subtitles() -> bool:
         return False
 
     return any(
-        re.match(r"^\s*[.A-Z|]{3}\s+ass\s", line)
-        for line in (result.stdout or "").splitlines()
+        re.match(r"^\s*\S+\s+ass\s", line)
+        for line in f"{result.stdout or ''}\n{result.stderr or ''}".splitlines()
     )
 
 

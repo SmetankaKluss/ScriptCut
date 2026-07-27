@@ -43,6 +43,23 @@ class BackendSmokeTests(unittest.TestCase):
         finally:
             video_editor.supports_ass_subtitles.cache_clear()
 
+    def test_ffmpeg_ass_detection_ignores_capability_column_count(self) -> None:
+        result = subprocess.CompletedProcess(
+            ["ffmpeg", "-filters"],
+            0,
+            stdout="Filters:\n TSC. ass               V->V       Render ASS subtitles\n",
+            stderr="",
+        )
+        video_editor.supports_ass_subtitles.cache_clear()
+        try:
+            with (
+                patch.object(video_editor, "_find_ffmpeg", return_value="ffmpeg"),
+                patch.object(video_editor.subprocess, "run", return_value=result),
+            ):
+                self.assertTrue(video_editor.supports_ass_subtitles())
+        finally:
+            video_editor.supports_ass_subtitles.cache_clear()
+
     def test_ffprobe_frame_rate_is_parsed_without_eval(self) -> None:
         self.assertAlmostEqual(video_editor._parse_frame_rate("30000/1001"), 29.97002997)
         self.assertEqual(video_editor._parse_frame_rate("0/0"), 0)

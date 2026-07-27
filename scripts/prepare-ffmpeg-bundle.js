@@ -189,7 +189,12 @@ function verifyMacBundle(files) {
 
 function supportsAss(ffmpegPath) {
   const result = run(ffmpegPath, ['-hide_banner', '-filters']);
-  return (result.stdout || '').split(/\r?\n/).some((line) => /^\s*[.A-Z|]{3}\s+ass\s/.test(line));
+  // FFmpeg has changed the number and meaning of filter-capability columns
+  // across releases. Match the first whitespace-delimited filter name instead
+  // of pinning a specific flag count.
+  return `${result.stdout || ''}\n${result.stderr || ''}`
+    .split(/\r?\n/)
+    .some((line) => /^\s*\S+\s+ass\s/.test(line));
 }
 
 function writeManifest(ffmpegPath, ffprobePath, bundledFiles, assSubtitles) {

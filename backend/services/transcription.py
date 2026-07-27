@@ -6,7 +6,6 @@ import logging
 from pathlib import Path
 from typing import Literal, Optional
 
-from utils.audio_processing import extract_audio
 from utils.cache import load_from_cache, save_to_cache
 
 logger = logging.getLogger(__name__)
@@ -236,6 +235,11 @@ def transcribe_audio(
 
     video_extensions = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
     if file_path.suffix.lower() in video_extensions:
+        # MoviePy is only needed for video inputs. Keeping this import lazy lets
+        # lightweight health checks and CI exercise transcription contracts
+        # without loading the entire media stack at module import time.
+        from utils.audio_processing import extract_audio
+
         audio_path = extract_audio(file_path)
     else:
         audio_path = file_path
