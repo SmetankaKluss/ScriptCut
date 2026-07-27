@@ -3,6 +3,7 @@
 const path = require('path');
 const { spawnSync } = require('child_process');
 const { resolvePythonRuntime } = require('../electron/python-runtime');
+const { bundledToolEnv } = require('../electron/bundled-tools');
 
 const root = path.join(__dirname, '..');
 
@@ -15,6 +16,10 @@ try {
       cwd: path.join(root, 'backend'),
       stdio: 'inherit',
       shell: false,
+      env: {
+        ...process.env,
+        ...bundledToolEnv(true),
+      },
     },
   );
   if (result.error) throw result.error;
