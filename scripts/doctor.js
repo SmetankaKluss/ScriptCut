@@ -27,6 +27,12 @@ function firstLine(value) {
   return String(value || '').trim().split(/\r?\n/)[0] || '';
 }
 
+function failureDetail(value, maxLength = 6000) {
+  const text = String(value || '').trim();
+  if (text.length <= maxLength) return text;
+  return `…${text.slice(-maxLength)}`;
+}
+
 function check(name, fn, required = true) {
   try {
     const result = fn();
@@ -84,7 +90,7 @@ const checks = [
     const result = run('npm', ['run', 'smoke:backend']);
     return {
       ok: result.status === 0,
-      detail: result.status === 0 ? 'smoke checks passed' : firstLine(result.stderr || result.stdout),
+      detail: result.status === 0 ? 'smoke checks passed' : failureDetail(result.stderr || result.stdout),
     };
   }),
   check('Ollama local AI', () => {

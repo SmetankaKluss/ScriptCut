@@ -183,6 +183,9 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
+      - name: Run backend smoke tests on Windows
+        run: npm run smoke:backend
+
       - name: Run desktop QA on Windows
         run: npm run qa:desktop
 
