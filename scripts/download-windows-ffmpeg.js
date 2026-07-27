@@ -24,6 +24,7 @@ const defaultAsset = `ffmpeg-n8.1-latest-${target}-gpl-8.1.zip`;
 const assetName = process.env.SCRIPTCUT_WINDOWS_FFMPEG_ASSET || defaultAsset;
 const archivePath = path.join(cacheDir, assetName);
 const extractDir = path.join(cacheDir, path.basename(assetName, '.zip'));
+const releaseResolveAttempts = Number(process.env.SCRIPTCUT_FFMPEG_RELEASE_ATTEMPTS || 6);
 
 function fail(message) {
   throw new Error(`Windows FFmpeg preparation failed: ${message}`);
@@ -65,6 +66,35 @@ async function resolveRelease() {
     downloadHeaders: { Accept: 'application/octet-stream' },
     source: `${release.html_url || 'https://github.com/BtbN/FFmpeg-Builds/releases'} (release ${release.id}, asset ${archive.id})`,
   };
+}
+
+function delay(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+}
+
+async function resolveReleaseAndChecksum() {
+  let lastError = null;
+  const attempts = Math.max(1, Math.min(12, releaseResolveAttempts));
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      const release = await resolveRelease();
+      const checksums = await (await response(release.checksumsUrl, release.downloadHeaders)).text();
+      return {
+        release,
+        expected: expectedChecksum(checksums),
+      };
+    } catch (error) {
+      lastError = error;
+      if (attempt === attempts) break;
+      const waitMs = Math.min(30_000, attempt * 5_000);
+      console.warn(
+        `Windows FFmpeg release is not complete yet (attempt ${attempt}/${attempts}); ` +
+        `retrying in ${Math.round(waitMs / 1000)}s: ${error.message || error}`,
+      );
+      await delay(waitMs);
+    }
+  }
+  throw lastError || new Error('could not resolve a complete FFmpeg release');
 }
 
 async function download(url, destination, headers = {}) {
@@ -126,9 +156,7 @@ async function main() {
   }
 
   fs.mkdirSync(cacheDir, { recursive: true });
-  const release = await resolveRelease();
-  const checksums = await (await response(release.checksumsUrl, release.downloadHeaders)).text();
-  const expected = expectedChecksum(checksums);
+  const { release, expected } = await resolveReleaseAndChecksum();
 
   if (!fs.existsSync(archivePath) || sha256(archivePath) !== expected) {
     await download(release.archiveUrl, archivePath, release.downloadHeaders);
@@ -176,5 +204,5 @@ async function main() {
 
 main().catch((error) => {
   console.error(error instanceof Error ? error.message : String(error));
-  process.exit(1);
+  process.exitCode = 1;
 });
