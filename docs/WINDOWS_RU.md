@@ -18,13 +18,26 @@ Windows-релиз создаёт два варианта:
 
 Python, Node.js и отдельный FFmpeg друзьям устанавливать не нужно.
 
+## Скачать проверенную alpha-сборку
+
+Текущий Windows 10/11 x64 prerelease:
+[ScriptCut 0.1.0 Windows alpha](https://github.com/SmetankaKluss/ScriptCut/releases/tag/windows-alpha-v0.1.0).
+
+- `ScriptCut-Setup-0.1.0-x64.exe` — установщик, 260 880 334 байта,
+  SHA-256 `d7a194bbcb532f0267f6a7489cdc9721b7b2eb0b2b9f6b73671147240954b057`;
+- `ScriptCut-0.1.0-portable-x64.exe` — portable, 260 665 729 байт,
+  SHA-256 `02acfe0b4da7353f5b917666501a7b453b2f321c39d578127b45f307d0e364a8`.
+
+Рядом с `.exe` опубликованы `SHA256SUMS-windows-x64.txt` и
+`release-manifest-windows-x64.json`.
+
 ## Первая установка
 
 Сборка пока не подписана коммерческим Windows-сертификатом. SmartScreen может
 показать предупреждение:
 
 1. Нажмите **Подробнее**.
-2. Сверьте SHA-256 файла с `SHA256SUMS.txt`.
+2. Сверьте SHA-256 файла с `SHA256SUMS-windows-x64.txt`.
 3. Нажмите **Выполнить в любом случае**, только если файл получен от вас.
 
 При первой расшифровке приложение скачивает модель Faster Whisper `base`.
@@ -47,8 +60,10 @@ Workflow `.github/workflows/ci.yml` использует настоящий
 9. чтение результата встроенным `ffprobe.exe`;
 10. запуск самого `ScriptCut.exe` и его защищённого локального backend.
 
-Артефакты публикуются GitHub Actions только после успешного прохождения всех
-этих шагов.
+Сборка `windows-alpha-v0.1.0` прошла все эти шаги в нативном
+[CI run 30275216207](https://github.com/SmetankaKluss/ScriptCut/actions/runs/30275216207).
+Promotion workflow повторно проверил SHA-256 перед публикацией файлов в
+GitHub Release.
 
 ## Локальная сборка на Windows 10/11 x64
 

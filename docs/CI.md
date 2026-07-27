@@ -22,3 +22,9 @@ For release candidates, dispatch the workflow with `package_windows=true`.
 That job runs `npm run release:windows`, builds NSIS and portable executables,
 starts the packaged backend, and performs a real captioned/bleep video export
 before uploading artifacts.
+
+After a successful packaging run, dispatch
+`.github/workflows/publish-windows-alpha.yml` with the verified run ID. The
+promotion job downloads that exact artifact, checks both SHA-256 values, gives
+the installer and portable build stable public names, and updates the Windows
+prerelease.

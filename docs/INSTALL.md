@@ -14,9 +14,10 @@ The desktop alpha includes portable FFmpeg/FFprobe and a standalone backend. No 
 
 Read [Platform Support](./PLATFORM_SUPPORT.md) before downloading. If a DMG is not attached yet, use the source setup below.
 
-For Windows, use the verified NSIS installer or portable executable produced
-by the Windows GitHub Actions release lane. Both include the backend and
-FFmpeg. See [Windows-сборка ScriptCut](./WINDOWS_RU.md).
+For Windows, download the verified
+[NSIS installer or portable executable](https://github.com/SmetankaKluss/ScriptCut/releases/tag/windows-alpha-v0.1.0).
+Both include the backend and FFmpeg. See
+[Windows-сборка ScriptCut](./WINDOWS_RU.md).
 
 ## Source Development Requirements
 

@@ -45,7 +45,13 @@ If no release asset is available yet, ScriptCut can still be run from source usi
 
 ## Alpha Compatibility
 
-The current downloadable alpha is verified for **macOS Apple Silicon (arm64)**. A native **Windows 10/11 x64** release lane now builds both NSIS and portable executables and blocks publication unless the packaged app completes a real captioned/bleep export. Both platforms bundle FFmpeg/FFprobe and a standalone backend, so friends do not need to install Python or backend packages.
+The current downloadable alpha is verified for **macOS Apple Silicon (arm64)**
+and **Windows 10/11 x64**. Download the Windows installer or portable build
+from the [verified Windows alpha release](https://github.com/SmetankaKluss/ScriptCut/releases/tag/windows-alpha-v0.1.0).
+The native release lane blocks publication unless the packaged app completes a
+real captioned/bleep export and launches successfully. Both platforms bundle
+FFmpeg/FFprobe and a standalone backend, so friends do not need to install
+Python or backend packages.
 
 The app is currently unsigned. On first launch, macOS may require **Control-click → Open**. See [Platform Support](docs/PLATFORM_SUPPORT.md) for the current support matrix before downloading.
 
