@@ -166,10 +166,11 @@ async function verifyPackagedApp(tempDir) {
       if (child.exitCode !== null) {
         fail(`packaged app exited early with code ${child.exitCode}: ${logs.join('\n')}`);
       }
-      // A packaged backend rejects requests without Electron's per-launch
-      // token. Receiving 401 proves that ScriptCut.exe started the protected
-      // backend instead of accidentally reaching an unrelated dev service.
-      if (await probeStatus(8642) === 401) {
+      // /health intentionally stays public for readiness probes. A protected
+      // endpoint must reject this tokenless request, which proves that
+      // ScriptCut.exe started its per-launch authenticated backend instead of
+      // accidentally reaching an unrelated development service.
+      if (await probeStatus(8642, '/system/checks') === 401) {
         await new Promise((resolve) => setTimeout(resolve, 2000));
         if (child.exitCode !== null) fail(`packaged app exited after backend startup: ${logs.join('\n')}`);
         console.log('Packaged ScriptCut.exe launch verified.');
@@ -285,7 +286,12 @@ async function main() {
   try {
     await verifyPackagedApp(tempDir);
   } finally {
-    fs.rmSync(tempDir, { recursive: true, force: true });
+    fs.rmSync(tempDir, {
+      recursive: true,
+      force: true,
+      maxRetries: 8,
+      retryDelay: 250,
+    });
   }
 }
 
