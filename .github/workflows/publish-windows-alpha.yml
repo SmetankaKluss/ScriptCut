@@ -1,0 +1,95 @@
+name: Publish verified Windows alpha
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_run_id:
+        description: Successful CI run that contains ScriptCut-windows-x64
+        required: true
+        type: string
+      release_tag:
+        description: GitHub prerelease tag
+        required: true
+        default: windows-alpha-v0.1.0
+        type: string
+
+permissions:
+  actions: read
+  contents: write
+
+jobs:
+  publish:
+    name: Promote verified Windows artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out verified source
+        uses: actions/checkout@v7
+
+      - name: Download artifacts from the verified run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN_ID: ${{ inputs.source_run_id }}
+        run: |
+          mkdir -p artifacts
+          gh run download "$SOURCE_RUN_ID" \
+            --repo "$GITHUB_REPOSITORY" \
+            --name ScriptCut-windows-x64 \
+            --dir artifacts
+
+      - name: Validate release payload
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -f "artifacts/ScriptCut Setup 0.1.0.exe"
+          test -f "artifacts/ScriptCut 0.1.0.exe"
+          test -f "artifacts/release-windows/SHA256SUMS.txt"
+          test -f "artifacts/release-windows/release-manifest.json"
+          (
+            cd artifacts
+            sha256sum --check release-windows/SHA256SUMS.txt
+          )
+
+      - name: Create or update prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        shell: bash
+        run: |
+          cat > release-notes.md <<'EOF'
+          Native Windows 10/11 x64 alpha for ScriptCut.
+
+          - `ScriptCut Setup 0.1.0.exe`: assisted NSIS installer.
+          - `ScriptCut 0.1.0.exe`: portable build.
+          - Python, Node.js, and a separate FFmpeg installation are not required.
+          - The build is unsigned, so Windows SmartScreen may show a warning.
+
+          This payload was promoted only after native Windows CI started the
+          packaged backend, rendered a vertical MP4 with ASS captions and a
+          censorship bleep, probed it with bundled FFprobe, and launched the
+          packaged ScriptCut.exe.
+          EOF
+
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release edit "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --prerelease \
+              --title "ScriptCut 0.1.0 Windows alpha" \
+              --notes-file release-notes.md
+          else
+            gh release create "$RELEASE_TAG" \
+              --repo "$GITHUB_REPOSITORY" \
+              --target "$GITHUB_SHA" \
+              --prerelease \
+              --title "ScriptCut 0.1.0 Windows alpha" \
+              --notes-file release-notes.md
+          fi
+
+          gh release upload "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --clobber \
+            "artifacts/ScriptCut Setup 0.1.0.exe" \
+            "artifacts/ScriptCut 0.1.0.exe" \
+            "artifacts/release-windows/SHA256SUMS.txt#SHA256SUMS-windows-x64.txt" \
+            "artifacts/release-windows/release-manifest.json#release-manifest-windows-x64.json"
