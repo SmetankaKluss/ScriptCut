@@ -413,27 +413,41 @@ def _check_canceled(progress_callback=None) -> None:
 
 
 def _run_ffmpeg(cmd: list[str], progress_callback=None) -> subprocess.CompletedProcess[str]:
-    process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+    # FFmpeg writes continuous progress to stderr. Waiting for process exit
+    # before reading a PIPE can fill the OS pipe buffer and deadlock long
+    # exports (especially on Windows). A temporary file keeps output bounded
+    # by disk rather than RAM/pipe capacity while preserving a useful error
+    # tail for diagnostics.
+    with tempfile.TemporaryFile(mode="w+b") as stderr_file:
+        process = subprocess.Popen(
+            cmd,
+            stdout=subprocess.DEVNULL,
+            stderr=stderr_file,
+        )
 
-    while process.poll() is None:
-        try:
-            _check_canceled(progress_callback)
-        except Exception:
-            process.terminate()
+        while process.poll() is None:
             try:
-                process.wait(timeout=3)
+                _check_canceled(progress_callback)
+            except Exception:
+                process.terminate()
+                try:
+                    process.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    process.kill()
+                    process.wait()
+                raise
+
+            try:
+                process.wait(timeout=0.25)
             except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-            raise
+                continue
 
-        try:
-            process.wait(timeout=0.25)
-        except subprocess.TimeoutExpired:
-            continue
-
-    stdout, stderr = process.communicate()
-    return subprocess.CompletedProcess(cmd, process.returncode, stdout, stderr)
+        stderr_file.flush()
+        stderr_file.seek(0, os.SEEK_END)
+        stderr_size = stderr_file.tell()
+        stderr_file.seek(max(0, stderr_size - 64 * 1024))
+        stderr = stderr_file.read().decode("utf-8", errors="replace")
+        return subprocess.CompletedProcess(cmd, process.returncode, "", stderr)
 
 
 def get_video_info(input_path: str) -> dict:

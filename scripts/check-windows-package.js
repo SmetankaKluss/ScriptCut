@@ -118,17 +118,22 @@ async function waitForBackend(child, logLines) {
   fail(`backend did not become ready in 120 seconds: ${logLines.join('\n')}`);
 }
 
-async function waitForJob(jobId) {
+async function waitForJob(jobId, backendLogs) {
   const deadline = Date.now() + 120_000;
+  let lastJob = null;
   while (Date.now() < deadline) {
     const job = await request('GET', `/jobs/${jobId}`);
+    lastJob = job;
     if (job.status === 'succeeded') return job.result;
     if (job.status === 'failed' || job.status === 'canceled') {
       fail(`export job ${job.status}: ${job.error || job.message}`);
     }
     await new Promise((resolve) => setTimeout(resolve, 500));
   }
-  fail('test export did not finish in 120 seconds');
+  fail(
+    `test export did not finish in 120 seconds. Last job: ${JSON.stringify(lastJob)}. ` +
+    `Backend log tail: ${backendLogs.join('\n')}`,
+  );
 }
 
 function stopBackend(child) {
@@ -267,7 +272,7 @@ async function main() {
       deleted_indices: [],
     });
     if (!started?.job_id) fail('backend did not create the Windows export job');
-    const result = await waitForJob(started.job_id);
+    const result = await waitForJob(started.job_id, logs);
     if (!fs.existsSync(output) || fs.statSync(output).size < 1024) {
       fail(`test export was not created: ${JSON.stringify(result)}`);
     }

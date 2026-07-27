@@ -71,6 +71,8 @@ function main() {
     'electron-builder',
     '--win',
     `--${arch}`,
+    '--publish',
+    'never',
   ], { env });
   runStep('Verify packaged Windows runtime and real export', 'node', ['scripts/check-windows-package.js'], { env });
 

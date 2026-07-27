@@ -258,6 +258,16 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertNotIn("[outa]", command_text)
         self.assertIn("concat=n=1:v=1:a=0[outv]", command_text)
 
+    def test_ffmpeg_runner_drains_large_stderr_without_deadlock(self) -> None:
+        result = video_editor._run_ffmpeg([
+            sys.executable,
+            "-c",
+            "import sys; sys.stderr.write('x' * 262144)",
+        ])
+
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(len(result.stderr), 64 * 1024)
+
     def test_subtitle_export_uses_explicit_ass_filename_option(self) -> None:
         captured: dict[str, list[str]] = {}
 
