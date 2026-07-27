@@ -51,6 +51,36 @@ jobs:
             sha256sum --check release-windows/SHA256SUMS.txt
           )
 
+      - name: Prepare public asset names and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          mv "artifacts/ScriptCut Setup 0.1.0.exe" \
+            "artifacts/ScriptCut-Setup-0.1.0-x64.exe"
+          mv "artifacts/ScriptCut 0.1.0.exe" \
+            "artifacts/ScriptCut-0.1.0-portable-x64.exe"
+
+          jq '
+            .artifacts |= map(
+              if .file == "ScriptCut Setup 0.1.0.exe" then
+                .file = "ScriptCut-Setup-0.1.0-x64.exe"
+              elif .file == "ScriptCut 0.1.0.exe" then
+                .file = "ScriptCut-0.1.0-portable-x64.exe"
+              else
+                .
+              end
+            )
+          ' artifacts/release-windows/release-manifest.json \
+            > artifacts/release-manifest-windows-x64.json
+
+          (
+            cd artifacts
+            sha256sum \
+              ScriptCut-Setup-0.1.0-x64.exe \
+              ScriptCut-0.1.0-portable-x64.exe \
+              > SHA256SUMS-windows-x64.txt
+          )
+
       - name: Create or update prerelease
         env:
           GH_TOKEN: ${{ github.token }}
@@ -60,8 +90,8 @@ jobs:
           cat > release-notes.md <<'EOF'
           Native Windows 10/11 x64 alpha for ScriptCut.
 
-          - `ScriptCut Setup 0.1.0.exe`: assisted NSIS installer.
-          - `ScriptCut 0.1.0.exe`: portable build.
+          - `ScriptCut-Setup-0.1.0-x64.exe`: assisted NSIS installer.
+          - `ScriptCut-0.1.0-portable-x64.exe`: portable build.
           - Python, Node.js, and a separate FFmpeg installation are not required.
           - The build is unsigned, so Windows SmartScreen may show a warning.
 
@@ -86,10 +116,20 @@ jobs:
               --notes-file release-notes.md
           fi
 
+          for old_asset in \
+            "ScriptCut.0.1.0.exe" \
+            "ScriptCut.Setup.0.1.0.exe" \
+            "SHA256SUMS.txt" \
+            "release-manifest.json"; do
+            gh release delete-asset "$RELEASE_TAG" "$old_asset" \
+              --repo "$GITHUB_REPOSITORY" \
+              --yes 2>/dev/null || true
+          done
+
           gh release upload "$RELEASE_TAG" \
             --repo "$GITHUB_REPOSITORY" \
             --clobber \
-            "artifacts/ScriptCut Setup 0.1.0.exe" \
-            "artifacts/ScriptCut 0.1.0.exe" \
-            "artifacts/release-windows/SHA256SUMS.txt#SHA256SUMS-windows-x64.txt" \
-            "artifacts/release-windows/release-manifest.json#release-manifest-windows-x64.json"
+            "artifacts/ScriptCut-Setup-0.1.0-x64.exe" \
+            "artifacts/ScriptCut-0.1.0-portable-x64.exe" \
+            "artifacts/SHA256SUMS-windows-x64.txt" \
+            "artifacts/release-manifest-windows-x64.json"
