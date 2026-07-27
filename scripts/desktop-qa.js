@@ -11,10 +11,12 @@ const buildArchitecture = process.env.SCRIPTCUT_BUILD_ARCH || process.arch;
 
 function runStep(name, command, args, options = {}) {
   console.log(`\n==> ${name}`);
+  const needsWindowsShell = process.platform === 'win32' && ['npm', 'npx'].includes(command);
   const result = spawnSync(command, args, {
     cwd: root,
     stdio: 'inherit',
     env: options.env || process.env,
+    shell: needsWindowsShell,
   });
 
   if (result.error) {
@@ -63,6 +65,7 @@ const steps = [
   ['Support report smoke tests', 'npm', ['run', 'test:support-report', '--prefix', 'frontend']],
   ['Playback sync smoke tests', 'npm', ['run', 'test:playback-sync', '--prefix', 'frontend']],
   ['Censorship smoke tests', 'npm', ['run', 'test:censorship', '--prefix', 'frontend']],
+  ['Desktop packaging smoke tests', 'npm', ['run', 'test:packaging']],
 ];
 
 for (const [name, command, args] of steps) {

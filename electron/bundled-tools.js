@@ -43,6 +43,7 @@ function bundledToolEnv(isDev) {
 
   if (ffmpeg) {
     env.SCRIPTCUT_FFMPEG_PATH = ffmpeg;
+    env.IMAGEIO_FFMPEG_EXE = ffmpeg;
     pathDirs.push(path.dirname(ffmpeg));
   }
   if (ffprobe) {

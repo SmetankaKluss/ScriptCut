@@ -189,7 +189,7 @@ function verifyMacBundle(files) {
 
 function supportsAss(ffmpegPath) {
   const result = run(ffmpegPath, ['-hide_banner', '-filters']);
-  return (result.stdout || '').split(/\r?\n/).some((line) => /^\s*[.A-Z]{2}\s+ass\s/.test(line));
+  return (result.stdout || '').split(/\r?\n/).some((line) => /^\s*[.A-Z|]{3}\s+ass\s/.test(line));
 }
 
 function writeManifest(ffmpegPath, ffprobePath, bundledFiles, assSubtitles) {

@@ -10,10 +10,12 @@ const root = path.join(__dirname, '..');
 
 function run(command, args, options = {}) {
   try {
+    const needsWindowsShell = process.platform === 'win32' && ['npm', 'npx'].includes(command);
     return spawnSync(command, args, {
       cwd: root,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'pipe'],
+      shell: needsWindowsShell,
       ...options,
     });
   } catch (error) {

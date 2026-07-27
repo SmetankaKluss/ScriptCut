@@ -4,6 +4,7 @@ const path = require('path');
 const { PythonBackend } = require('./python-bridge');
 
 let mainWindow = null;
+let startupWindow = null;
 let pythonBackend = null;
 let backendStartupError = '';
 
@@ -60,6 +61,42 @@ function openExternalUrl(url) {
   }
 }
 
+function createStartupWindow() {
+  startupWindow = new BrowserWindow({
+    width: 440,
+    height: 240,
+    resizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    title: 'Starting ScriptCut',
+    backgroundColor: '#0f1118',
+    show: false,
+    webPreferences: {
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  const html = `<!doctype html>
+    <meta charset="utf-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'">
+    <style>
+      body{margin:0;height:100vh;display:grid;place-items:center;background:#0f1118;color:#f3f4f6;font:14px system-ui,sans-serif}
+      main{max-width:330px;text-align:center}.mark{font-size:34px;color:#756cff}.muted{color:#9ca3af;line-height:1.5}
+      .loader{width:180px;height:3px;margin:22px auto;background:#252936;overflow:hidden;border-radius:4px}
+      .loader:after{content:"";display:block;width:42%;height:100%;background:#756cff;animation:move 1.2s infinite ease-in-out}
+      @keyframes move{from{transform:translateX(-110%)}to{transform:translateX(350%)}}
+    </style>
+    <main><div class="mark">✂</div><h2>ScriptCut запускается</h2>
+    <p class="muted">Подготавливаем локальный движок. Первый запуск после установки может занять до минуты.</p>
+    <div class="loader"></div></main>`;
+  startupWindow.loadURL(`data:text/html;charset=UTF-8,${encodeURIComponent(html)}`);
+  startupWindow.once('ready-to-show', () => startupWindow?.show());
+  startupWindow.on('closed', () => {
+    startupWindow = null;
+  });
+}
+
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 1400,
@@ -87,6 +124,7 @@ function createWindow() {
 
   mainWindow.once('ready-to-show', () => {
     mainWindow.show();
+    if (startupWindow && !startupWindow.isDestroyed()) startupWindow.close();
   });
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -114,6 +152,7 @@ function createWindow() {
 }
 
 app.whenReady().then(async () => {
+  if (!isDev) createStartupWindow();
   pythonBackend = new PythonBackend(BACKEND_PORT, isDev);
   try {
     await pythonBackend.start();

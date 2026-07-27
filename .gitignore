@@ -37,6 +37,7 @@ build/pyinstaller-work/
 build/*.iconset/
 build/icon-*.png
 build/icon.tiff
+build/icon.ico
 *.asar
 
 # TypeScript incremental build cache

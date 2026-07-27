@@ -14,6 +14,10 @@ The desktop alpha includes portable FFmpeg/FFprobe and a standalone backend. No 
 
 Read [Platform Support](./PLATFORM_SUPPORT.md) before downloading. If a DMG is not attached yet, use the source setup below.
 
+For Windows, use the verified NSIS installer or portable executable produced
+by the Windows GitHub Actions release lane. Both include the backend and
+FFmpeg. See [Windows-сборка ScriptCut](./WINDOWS_RU.md).
+
 ## Source Development Requirements
 
 - Node.js 18 or newer
@@ -75,7 +79,9 @@ Linux:
 sudo apt install ffmpeg
 ```
 
-Windows users should install FFmpeg and ensure `ffmpeg.exe` is available in `PATH`.
+Windows source developers can install FFmpeg in `PATH`, while release
+maintainers should use `npm run release:ffmpeg:windows` to download and verify
+the static release bundle.
 
 Release maintainers can create and verify a portable FFmpeg/FFprobe bundle in `build/bin/<platform>-<arch>/` with:
 

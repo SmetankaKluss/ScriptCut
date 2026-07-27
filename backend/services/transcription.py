@@ -62,6 +62,14 @@ except Exception:
 
 
 def _get_device(use_gpu: bool = True) -> str:
+    if use_gpu and FASTER_WHISPER_AVAILABLE:
+        try:
+            import ctranslate2
+
+            if ctranslate2.get_cuda_device_count() > 0:
+                return "cuda"
+        except (ImportError, RuntimeError):
+            pass
     if use_gpu and TORCH_AVAILABLE and get_optimal_device:
         return str(get_optimal_device())
     return "cpu"
@@ -78,7 +86,13 @@ def _load_model(model_name: str, device: str, engine: TranscriptionEngine):
     elif engine == "faster-whisper" and FASTER_WHISPER_AVAILABLE:
         faster_device = "cuda" if device.startswith("cuda") else "cpu"
         compute_type = "float16" if faster_device == "cuda" else "int8"
-        model = WhisperModel(model_name, device=faster_device, compute_type=compute_type)
+        try:
+            model = WhisperModel(model_name, device=faster_device, compute_type=compute_type)
+        except RuntimeError as error:
+            if faster_device != "cuda":
+                raise
+            logger.warning("CUDA Faster Whisper initialization failed; falling back to CPU: %s", error)
+            model = WhisperModel(model_name, device="cpu", compute_type="int8")
     elif engine == "whisperx" and WHISPERX_AVAILABLE:
         whisperx_device = "cuda" if device.startswith("cuda") else "cpu"
         compute_type = "float16" if whisperx_device == "cuda" else "int8"

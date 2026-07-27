@@ -38,6 +38,14 @@ Release maintainers can also prepare the local bundle before packaging:
 npm run release:ffmpeg
 ```
 
+On a native Windows release machine use:
+
+```powershell
+npm run release:ffmpeg:windows
+```
+
+This path rejects unverified downloads and requires ASS subtitle support.
+
 ## Backend Will Not Start
 
 Run:

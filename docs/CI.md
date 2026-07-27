@@ -12,6 +12,13 @@ npm run smoke:backend
 python -m compileall -q backend
 ```
 
-The backend smoke checks intentionally use minimal Python dependencies so CI does not need to install the full transcription and ML stack for every pull request.
+The Linux backend smoke checks intentionally use minimal Python dependencies so
+that lane does not install the full transcription and ML stack.
 
-When repository automation has permission to create workflow files, add a GitHub Actions workflow that runs the commands above on pushes to `main` and on pull requests.
+The Windows lane uses `windows-latest`, installs the complete core dependency
+set, downloads checksum-verified FFmpeg, and runs `npm run qa:desktop`.
+
+For release candidates, dispatch the workflow with `package_windows=true`.
+That job runs `npm run release:windows`, builds NSIS and portable executables,
+starts the packaged backend, and performs a real captioned/bleep video export
+before uploading artifacts.

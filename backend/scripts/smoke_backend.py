@@ -20,11 +20,55 @@ from routers import system as system_router
 from local_api_auth import is_authorized_local_api_request
 from services import video_editor
 from services import ai_provider
+from services import transcription
 from services.caption_generator import generate_srt
 from services.job_manager import JobManager
 
 
 class BackendSmokeTests(unittest.TestCase):
+    def test_modern_ffmpeg_ass_filter_is_detected(self) -> None:
+        result = subprocess.CompletedProcess(
+            ["ffmpeg", "-filters"],
+            0,
+            stdout="Filters:\n ... ass               V->V       Render ASS subtitles\n",
+            stderr="",
+        )
+        video_editor.supports_ass_subtitles.cache_clear()
+        try:
+            with (
+                patch.object(video_editor, "_find_ffmpeg", return_value="ffmpeg"),
+                patch.object(video_editor.subprocess, "run", return_value=result),
+            ):
+                self.assertTrue(video_editor.supports_ass_subtitles())
+        finally:
+            video_editor.supports_ass_subtitles.cache_clear()
+
+    def test_ffprobe_frame_rate_is_parsed_without_eval(self) -> None:
+        self.assertAlmostEqual(video_editor._parse_frame_rate("30000/1001"), 29.97002997)
+        self.assertEqual(video_editor._parse_frame_rate("0/0"), 0)
+        self.assertEqual(video_editor._parse_frame_rate("__import__('os').system('false')/1"), 0)
+
+    def test_faster_whisper_cuda_failure_falls_back_to_cpu(self) -> None:
+        transcription._model_cache.clear()
+        fake_model = object()
+        try:
+            with (
+                patch.object(transcription, "FASTER_WHISPER_AVAILABLE", True),
+                patch.object(
+                    transcription,
+                    "WhisperModel",
+                    side_effect=[RuntimeError("missing CUDA runtime"), fake_model],
+                ) as model_factory,
+            ):
+                self.assertIs(
+                    transcription._load_model("base", "cuda", "faster-whisper"),
+                    fake_model,
+                )
+                self.assertEqual(model_factory.call_args_list[1].kwargs["device"], "cpu")
+                self.assertEqual(model_factory.call_args_list[1].kwargs["compute_type"], "int8")
+        finally:
+            transcription._model_cache.clear()
+
     def test_packaged_backend_requires_local_api_token(self) -> None:
         self.assertTrue(is_authorized_local_api_request("", None))
         self.assertFalse(is_authorized_local_api_request("smoke-token", None))

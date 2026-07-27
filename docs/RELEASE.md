@@ -102,6 +102,24 @@ The generated installer will be written under `dist/`.
 
 Use `npm run dist:dir` when you only need an unpacked app bundle for local QA.
 
+## Windows NSIS and Portable Build
+
+Build Windows releases only on native Windows x64:
+
+```powershell
+npm run release:windows
+```
+
+The command downloads a checksum-verified static FFmpeg build, creates the
+standalone PyInstaller backend, runs desktop QA, builds NSIS and portable
+executables, starts the packaged backend, and renders a real vertical clip with
+ASS captions and a censorship bleep. It then launches the packaged
+`ScriptCut.exe` and confirms that its protected local backend starts. It writes
+checksums and a release manifest to `dist/release-windows/`.
+
+The same path is available through the `package_windows` workflow-dispatch
+input. CI uploads `.exe` files only after native verification succeeds.
+
 ## GitHub Release Draft
 
 Use this format for the first public alpha release:

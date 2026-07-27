@@ -33,7 +33,7 @@ def supports_ass_subtitles() -> bool:
         return False
 
     return any(
-        re.match(r"^\s*[.A-Z]{2}\s+ass\s", line)
+        re.match(r"^\s*[.A-Z|]{3}\s+ass\s", line)
         for line in (result.stdout or "").splitlines()
     )
 
@@ -460,8 +460,23 @@ def get_video_info(input_path: str) -> dict:
             "width": int(video_stream.get("width", 0)),
             "height": int(video_stream.get("height", 0)),
             "codec": video_stream.get("codec_name", ""),
-            "fps": eval(video_stream.get("r_frame_rate", "0/1")) if "/" in video_stream.get("r_frame_rate", "") else 0,
+            "fps": _parse_frame_rate(video_stream.get("r_frame_rate", "")),
         }
     except Exception as e:
         logger.error(f"Failed to get video info: {e}")
         return {}
+
+
+def _parse_frame_rate(value: object) -> float:
+    """Parse FFprobe's rational frame rate without evaluating media metadata."""
+    if not isinstance(value, str) or "/" not in value:
+        return 0.0
+    numerator_text, denominator_text = value.split("/", 1)
+    try:
+        numerator = float(numerator_text)
+        denominator = float(denominator_text)
+    except ValueError:
+        return 0.0
+    if denominator == 0:
+        return 0.0
+    return numerator / denominator

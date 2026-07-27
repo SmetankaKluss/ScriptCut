@@ -20,7 +20,7 @@ function run(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: options.cwd || root,
     stdio: 'inherit',
-    shell: isWindows,
+    shell: false,
   });
   if (result.error) throw result.error;
   if (result.status !== 0) process.exit(result.status ?? 1);
@@ -34,11 +34,10 @@ run(python, ['-m', 'pip', 'install', '-r', 'requirements-build.txt'], { cwd: bac
 
 const collectPackages = [
   'faster_whisper',
-  'ctranslate2',
   'tokenizers',
   'av',
-  'onnxruntime',
 ];
+const collectBinaryDataPackages = ['ctranslate2'];
 const hiddenImports = [
   'uvicorn.logging',
   'uvicorn.loops.auto',
@@ -53,7 +52,6 @@ const metadataPackages = [
   'faster-whisper',
   'huggingface-hub',
   'tokenizers',
-  'onnxruntime',
   'openai',
   'anthropic',
 ];
@@ -79,6 +77,9 @@ const args = [
 for (const packageName of collectPackages) {
   args.push('--collect-all', packageName);
 }
+for (const packageName of collectBinaryDataPackages) {
+  args.push('--collect-binaries', packageName, '--collect-data', packageName);
+}
 for (const moduleName of hiddenImports) {
   args.push('--hidden-import', moduleName);
 }
@@ -96,5 +97,16 @@ if (!fs.existsSync(executable)) {
   throw new Error(`Packaged backend executable was not created: ${executable}`);
 }
 if (!isWindows) fs.chmodSync(executable, 0o755);
+
+// Electron always points MoviePy/ImageIO at ScriptCut's verified platform
+// FFmpeg. Keeping ImageIO's second bundled binary wastes ~45-50 MB per app.
+const imageioBundledFfmpeg = path.join(
+  distDir,
+  'scriptcut-backend',
+  '_internal',
+  'imageio_ffmpeg',
+  'binaries',
+);
+fs.rmSync(imageioBundledFfmpeg, { recursive: true, force: true });
 
 console.log(`Standalone backend ready: ${path.relative(root, executable)}`);

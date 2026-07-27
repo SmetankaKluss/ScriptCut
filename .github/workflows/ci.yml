@@ -12,6 +12,11 @@ on:
         required: false
         default: false
         type: boolean
+      package_windows:
+        description: Build and native-test Windows NSIS and portable executables
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -83,6 +88,9 @@ jobs:
       - name: Test playback sync workflow
         run: npm run test:playback-sync --prefix frontend
 
+      - name: Test censorship workflow
+        run: npm run test:censorship --prefix frontend
+
       - name: Build frontend
         run: npm run build --prefix frontend
 
@@ -114,13 +122,116 @@ jobs:
       - name: Install frontend dependencies
         run: npm ci --prefix frontend
 
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install backend dependencies
+        run: npm run setup:backend
+
       - name: Install FFmpeg
         run: brew install ffmpeg
 
       - name: Prepare portable FFmpeg bundle
         run: npm run release:ffmpeg
 
+      - name: Prepare standalone backend runtime
+        run: npm run release:backend
+
       - name: Build and verify unpacked Apple Silicon desktop app
         run: |
           npm run dist:dir:arm64
           npm run check:packaged-ffmpeg -- --arch arm64
+
+  checks-windows:
+    name: Windows runtime checks
+    runs-on: windows-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install root dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Install backend dependencies
+        run: npm run setup:backend
+
+      - name: Prepare checksum-verified Windows FFmpeg
+        run: npm run release:ffmpeg:windows
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Run desktop QA on Windows
+        run: npm run qa:desktop
+
+  package-windows:
+    name: Package and native-test Windows desktop app
+    if: github.event_name == 'workflow_dispatch' && inputs.package_windows
+    runs-on: windows-latest
+    timeout-minutes: 50
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            package-lock.json
+            frontend/package-lock.json
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.11"
+          cache: pip
+
+      - name: Install root dependencies
+        run: npm ci --no-audit --no-fund
+
+      - name: Install frontend dependencies
+        run: npm ci --prefix frontend
+
+      - name: Install backend dependencies
+        run: npm run setup:backend
+
+      - name: Build and verify Windows release
+        run: npm run release:windows
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+
+      - name: Upload Windows executables
+        uses: actions/upload-artifact@v6
+        with:
+          name: ScriptCut-windows-x64
+          if-no-files-found: error
+          retention-days: 14
+          path: |
+            dist/*.exe
+            dist/release-windows/SHA256SUMS.txt
+            dist/release-windows/release-manifest.json

@@ -64,6 +64,7 @@ class PythonBackend {
     ], {
       cwd: backendDir,
       stdio: ['pipe', 'pipe', 'pipe'],
+      windowsHide: process.platform === 'win32',
       env: {
         ...process.env,
         ...bundledToolEnv(this.isDev),
@@ -98,7 +99,7 @@ class PythonBackend {
       this.process = null;
     });
 
-    await this._waitForReady(30000);
+    await this._waitForReady(this.isDev ? 30000 : 120000);
     console.log(`[backend] Ready on port ${this.port}`);
   }
 
@@ -116,7 +117,7 @@ class PythonBackend {
   stop() {
     if (this.process) {
       if (process.platform === 'win32') {
-        spawn('taskkill', ['/pid', String(this.process.pid), '/f', '/t']);
+        spawn('taskkill', ['/pid', String(this.process.pid), '/f', '/t'], { windowsHide: true });
       } else {
         this.process.kill('SIGTERM');
       }

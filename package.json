@@ -41,16 +41,21 @@
     "dist:dir:arm64": "npm run build:frontend && electron-builder --dir --arm64",
     "dist:dir:x64": "npm run build:frontend && electron-builder --dir --x64",
     "release:icons": "node scripts/generate-icons.js",
+    "release:icons:windows": "node scripts/generate-windows-icon.js",
     "release:ffmpeg": "node scripts/prepare-ffmpeg-bundle.js",
+    "release:ffmpeg:windows": "node scripts/download-windows-ffmpeg.js",
     "release:backend": "node scripts/prepare-backend-runtime.js",
     "release:platform": "node scripts/release-platform.js",
     "check:packaged-ffmpeg": "node scripts/check-packaged-ffmpeg.js",
     "qa:desktop": "node scripts/desktop-qa.js",
     "qa:desktop:package": "node scripts/desktop-qa.js --package",
     "release:alpha": "node scripts/release-alpha.js",
+    "release:windows": "node scripts/release-windows.js",
+    "check:windows-package": "node scripts/check-windows-package.js",
+    "test:packaging": "node scripts/smoke-packaging.js",
     "release:trust": "node scripts/check-release-trust.js",
     "lint": "cd frontend && npm run lint",
-    "smoke:backend": "cd backend && (../.venv311/bin/python scripts/smoke_backend.py || ../.venv/bin/python scripts/smoke_backend.py || python scripts/smoke_backend.py)"
+    "smoke:backend": "node scripts/run-backend-smoke.js"
   },
   "devDependencies": {
     "concurrently": "^9.1.0",
@@ -91,7 +96,28 @@
       }
     ],
     "win": {
-      "target": "nsis"
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": "always",
+      "createStartMenuShortcut": true
     },
     "mac": {
       "target": "dmg",

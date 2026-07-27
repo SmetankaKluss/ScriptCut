@@ -14,12 +14,14 @@ const venvPython = isWindows
 
 function run(command, args, options = {}) {
   console.log(`\n$ ${[command, ...args].join(' ')}`);
+  const needsWindowsShell = isWindows && ['npm', 'npx'].includes(command);
   const result = spawnSync(command, args, {
     cwd: root,
     stdio: 'inherit',
-    shell: isWindows,
+    shell: needsWindowsShell,
     ...options,
   });
+  if (result.error) throw result.error;
   if (result.status !== 0) {
     process.exit(result.status ?? 1);
   }
@@ -29,24 +31,36 @@ function commandExists(command, args = ['--version']) {
   const result = spawnSync(command, args, {
     cwd: root,
     stdio: 'ignore',
-    shell: isWindows,
+    shell: false,
   });
   return result.status === 0;
 }
 
 function resolvePythonCommand() {
-  if (process.env.SCRIPTCUT_PYTHON_PATH) return process.env.SCRIPTCUT_PYTHON_PATH;
-  const candidates = isWindows ? ['py -3.11', 'py -3.12', 'py -3.10', 'python'] : ['python3.11', 'python3.12', 'python3.10', 'python3'];
+  if (process.env.SCRIPTCUT_PYTHON_PATH) {
+    return { command: process.env.SCRIPTCUT_PYTHON_PATH, argsPrefix: [] };
+  }
+  const candidates = isWindows
+    ? [
+        { command: 'py', argsPrefix: ['-3.11'] },
+        { command: 'py', argsPrefix: ['-3.12'] },
+        { command: 'py', argsPrefix: ['-3.10'] },
+        { command: 'python', argsPrefix: [] },
+      ]
+    : [
+        { command: 'python3.11', argsPrefix: [] },
+        { command: 'python3.12', argsPrefix: [] },
+        { command: 'python3.10', argsPrefix: [] },
+        { command: 'python3', argsPrefix: [] },
+      ];
   for (const candidate of candidates) {
-    const [command, ...args] = candidate.split(' ');
-    if (commandExists(command, [...args, '--version'])) return candidate;
+    if (commandExists(candidate.command, [...candidate.argsPrefix, '--version'])) return candidate;
   }
   throw new Error('Python 3.10-3.12 was not found. Install Python 3.11 or set SCRIPTCUT_PYTHON_PATH.');
 }
 
-function runPython(pythonCommand, args) {
-  const [command, ...prefix] = pythonCommand.split(' ');
-  run(command, [...prefix, ...args]);
+function runPython(runtime, args) {
+  run(runtime.command, [...runtime.argsPrefix, ...args]);
 }
 
 function main() {

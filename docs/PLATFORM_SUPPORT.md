@@ -6,7 +6,7 @@ This page describes the current ScriptCut alpha support boundary. It is intentio
 | --- | --- | --- | --- |
 | macOS Apple Silicon (arm64) | Verified alpha path | GitHub Release DMG | Portable FFmpeg/FFprobe and the standalone backend are bundled and verified inside the packaged app. |
 | macOS Intel (x64) | Preparation supported, release not yet published | Source / maintainer build | Build and validate on a native Intel Mac with a matching x64 FFmpeg bundle before publishing an Intel DMG. |
-| Windows | Source development only | No public installer | Do not treat the current NSIS config as a supported release until packaging, FFmpeg, and export have been verified on Windows. |
+| Windows 10/11 x64 | Native release lane ready; artifact pending CI run | NSIS installer + portable `.exe` | Standalone backend and checksum-verified static FFmpeg are bundled. A native Windows runner performs a real captioned/bleep export before publishing artifacts. |
 | Linux | Source development only | No public installer | Do not treat the current AppImage config as a supported release until packaging, FFmpeg, and export have been verified on Linux. |
 | Browser at `localhost:5173` | Development and testing only | Local dev server | Browser mode can upload media and download exports, but it does not provide the desktop app's native file access or autosave workflow. |
 
@@ -20,6 +20,9 @@ This page describes the current ScriptCut alpha support boundary. It is intentio
 ## Current Alpha Prerequisite
 
 The packaged desktop alpha does not require a separate Python installation. Source development and maintainer builds still use Python 3.11.
+
+Windows release details and SmartScreen guidance are in
+[WINDOWS_RU.md](./WINDOWS_RU.md).
 
 ## Caption Delivery
 
