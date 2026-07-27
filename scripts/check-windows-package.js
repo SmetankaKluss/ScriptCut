@@ -137,11 +137,16 @@ async function waitForJob(jobId, backendLogs) {
 }
 
 function stopBackend(child) {
-  if (!child || child.exitCode !== null) return;
-  spawnSync('taskkill.exe', ['/pid', String(child.pid), '/f', '/t'], {
+  if (!child || child.exitCode !== null) return true;
+  const result = spawnSync('taskkill.exe', ['/pid', String(child.pid), '/f', '/t'], {
     stdio: 'ignore',
     windowsHide: true,
   });
+  if (result.status !== 0) {
+    console.warn(`taskkill could not confirm process-tree shutdown for PID ${child.pid}.`);
+    return false;
+  }
+  return true;
 }
 
 async function verifyPackagedApp(tempDir) {
@@ -286,12 +291,19 @@ async function main() {
   try {
     await verifyPackagedApp(tempDir);
   } finally {
-    fs.rmSync(tempDir, {
-      recursive: true,
-      force: true,
-      maxRetries: 8,
-      retryDelay: 250,
-    });
+    try {
+      fs.rmSync(tempDir, {
+        recursive: true,
+        force: true,
+        maxRetries: 8,
+        retryDelay: 250,
+      });
+    } catch (error) {
+      // Windows can retain short-lived Chromium profile locks after taskkill.
+      // The runner/OS will reclaim this QA-only directory; product validation
+      // has already completed, so cleanup must not invalidate the release.
+      console.warn(`Temporary Windows QA cleanup deferred: ${error.message}`);
+    }
   }
 }
 
