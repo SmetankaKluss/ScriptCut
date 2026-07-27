@@ -31,6 +31,9 @@ Thumbs.db
 dist/
 build/bin/*
 !build/bin/.gitkeep
+build/backend-runtime/
+build/pyinstaller-spec/
+build/pyinstaller-work/
 build/*.iconset/
 build/icon-*.png
 build/icon.tiff

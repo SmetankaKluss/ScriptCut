@@ -6,10 +6,9 @@ This guide is for a creator using the ScriptCut desktop alpha, not for contribut
 
 - Use a macOS Apple Silicon Mac (M1 or newer) for the current downloadable alpha.
 - Open ScriptCut from the DMG and wait for the setup assistant.
-- Green checks for the local backend, Python, and FFmpeg mean you can edit and export.
-- If Python is marked as missing, use the **Install Python for macOS** link in the app, restart ScriptCut, and press the refresh button in the setup assistant.
+- Green checks for the local backend, transcription engine, and FFmpeg mean you can edit and export.
 
-The alpha includes FFmpeg for export. It still uses a local Python runtime and ScriptCut backend dependencies for transcription and editing, so the setup assistant is the source of truth for readiness on your Mac.
+The alpha includes FFmpeg and a standalone backend for transcription and editing, so the setup assistant is the source of truth for readiness on your Mac.
 
 ## Edit A Full Video
 

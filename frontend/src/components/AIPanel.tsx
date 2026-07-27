@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useEditorStore } from '../store/editorStore';
 import { useAIStore } from '../store/aiStore';
-import { Sparkles, Scissors, Film, Loader2, Check, X, Play, Download, RotateCcw, Plus, Users, Filter, Image, Clipboard, ExternalLink } from 'lucide-react';
-import type { CaptionStyle, ClipDraft, ClipDraftStatus, ClipSuggestion, EditPlanReviewDecision, EditPlanResult, EditPlanSuggestion, FillerReviewDecision, FillerWordResult, Word } from '../types/project';
+import { Sparkles, Scissors, Film, Loader2, Check, X, Play, Download, RotateCcw, Plus, Users, Filter, Image, Clipboard, ExternalLink, ShieldAlert, VolumeX } from 'lucide-react';
+import type { CaptionStyle, ClipDraft, ClipDraftStatus, ClipSuggestion, EditPlanReviewDecision, EditPlanResult, EditPlanSuggestion, FillerReviewDecision, FillerWordResult, TopicSelectionSegment, Word } from '../types/project';
 import {
   getClipDraftReadinessScore,
   buildClipExportCaptionWords,
@@ -20,6 +20,7 @@ import {
   type HookFrameCandidate,
 } from '../utils/hookFrames';
 import CaptionPreview from './CaptionPreview';
+import { findCensorMatches, type CensorMatch } from '../utils/censorship';
 
 type FillerQueueFilter = 'all' | 'unreviewed' | 'safe' | 'review' | 'low' | 'accepted' | 'rejected';
 
@@ -137,9 +138,12 @@ export default function AIPanel() {
     videoPath,
     backendUrl,
     deletedRanges,
+    editOperations,
     deleteWordRange,
+    addEditOperation,
     restoreRange,
     requestSeek,
+    requestPreviewRange,
     setPreviewAspectRatio,
     setExportOptions,
     getMutedRanges,
@@ -151,6 +155,9 @@ export default function AIPanel() {
     defaultProvider,
     providers,
     customFillerWords,
+    customCensorWords,
+    censorMode,
+    includeBuiltInProfanity,
     fillerResult,
     fillerDecisions,
     editPlanInstruction,
@@ -161,6 +168,9 @@ export default function AIPanel() {
     isProcessing,
     processingMessage,
     setCustomFillerWords,
+    setCustomCensorWords,
+    setCensorMode,
+    setIncludeBuiltInProfanity,
     setFillerResult,
     setFillerDecisions,
     setEditPlanInstruction,
@@ -171,7 +181,8 @@ export default function AIPanel() {
     setProcessing,
   } = useAIStore();
 
-  const [activeTab, setActiveTab] = useState<'edit' | 'filler' | 'clips'>('edit');
+  const [activeTab, setActiveTab] = useState<'edit' | 'censor' | 'filler' | 'clips'>('edit');
+  const [topicContextPadding, setTopicContextPadding] = useState(0.45);
   const [fillerQueueFilter, setFillerQueueFilter] = useState<FillerQueueFilter>('all');
   const [fillerReasonFilter, setFillerReasonFilter] = useState('all');
   const [activeAIJob, setActiveAIJob] = useState<(AIJob<unknown> & AIJobContext) | null>(null);
@@ -185,6 +196,28 @@ export default function AIPanel() {
     }
     return map;
   }, [deletedRanges]);
+  const censoredWordIndices = useMemo(() => {
+    const indices = new Set<number>();
+    for (const operation of editOperations) {
+      if (!['bleep', 'mute', 'room-tone'].includes(operation.kind)) continue;
+      for (const index of operation.wordIndices) indices.add(index);
+    }
+    return indices;
+  }, [editOperations]);
+  const censorMatches = useMemo(
+    () => findCensorMatches(words, customCensorWords, includeBuiltInProfanity),
+    [customCensorWords, includeBuiltInProfanity, words],
+  );
+  const pendingCensorMatches = useMemo(
+    () =>
+      censorMatches.filter((match) => {
+        for (let index = match.startWordIndex; index <= match.endWordIndex; index++) {
+          if (!censoredWordIndices.has(index)) return true;
+        }
+        return false;
+      }),
+    [censorMatches, censoredWordIndices],
+  );
 
   useEffect(() => {
     let canceled = false;
@@ -318,6 +351,29 @@ export default function AIPanel() {
     });
   }, [deleteWordRange, pendingEditSuggestions, setEditPlanDecisions]);
 
+  const applyCensorMatch = useCallback(
+    (match: CensorMatch) => {
+      addEditOperation(
+        censorMode,
+        Array.from(
+          { length: match.endWordIndex - match.startWordIndex + 1 },
+          (_, offset) => match.startWordIndex + offset,
+        ),
+      );
+    },
+    [addEditOperation, censorMode],
+  );
+
+  const applyAllCensorMatches = useCallback(() => {
+    const indices = pendingCensorMatches.flatMap((match) =>
+      Array.from(
+        { length: match.endWordIndex - match.startWordIndex + 1 },
+        (_, offset) => match.startWordIndex + offset,
+      ),
+    );
+    addEditOperation(censorMode, indices);
+  }, [addEditOperation, censorMode, pendingCensorMatches]);
+
   const speakerTurnClips = useMemo(() => {
     const turns: ClipSuggestion[] = [];
     if (words.length === 0 || !words.some((word) => word.speaker)) return turns;
@@ -409,33 +465,33 @@ export default function AIPanel() {
   const createEditPlan = useCallback(async () => {
     const instruction = editPlanInstruction.trim();
     if (words.length === 0 || !instruction) return;
-    setProcessing(true, 'Planning edits...');
+    setProcessing(true, 'Ищу фрагменты по теме...');
     try {
       const config = providers[defaultProvider];
-      const transcript = words.map((w) => w.word).join(' ');
       const data = await startAIJob<EditPlanResult>(
         '/jobs/ai/edit-plan',
         {
           instruction,
-          transcript,
           words: words.map((w, i) => ({
             index: i,
             word: w.word,
             start: w.start,
             end: w.end,
           })),
+          mode: 'topic',
+          context_padding: topicContextPadding,
           provider: defaultProvider,
           model: config.model,
           api_key: config.apiKey || undefined,
           base_url: config.baseUrl || undefined,
         },
-        'Edit planning',
-        { label: 'Edit planning' },
+        'Тематический монтаж',
+        { label: 'Тематический монтаж' },
       );
       setEditPlanResult(data);
     } catch (err) {
       console.error(err);
-      alert(`Edit planning failed.\n\n${err instanceof Error ? err.message : String(err)}`);
+      alert(`Не удалось найти фрагменты по теме.\n\n${err instanceof Error ? err.message : String(err)}`);
     } finally {
       setProcessing(false);
     }
@@ -446,6 +502,7 @@ export default function AIPanel() {
     setEditPlanResult,
     setProcessing,
     startAIJob,
+    topicContextPadding,
     words,
   ]);
 
@@ -1247,6 +1304,12 @@ export default function AIPanel() {
           label="Filler Words"
         />
         <TabButton
+          active={activeTab === 'censor'}
+          onClick={() => setActiveTab('censor')}
+          icon={<ShieldAlert className="w-3.5 h-3.5" />}
+          label="Цензура"
+        />
+        <TabButton
           active={activeTab === 'clips'}
           onClick={() => setActiveTab('clips')}
           icon={<Film className="w-3.5 h-3.5" />}
@@ -1262,19 +1325,40 @@ export default function AIPanel() {
         {activeTab === 'edit' && (
           <div className="space-y-4">
             <p className="text-xs text-editor-text-muted">
-              Ask for transcript edits, review each proposed cut, then apply only the changes you want.
+              Опишите тему — приложение найдёт все связанные фрагменты даже в длинном стриме.
+              Сначала проверьте найденные эпизоды и предложенные удаления, затем примените монтаж.
             </p>
             <div className="space-y-1.5">
               <label className="text-[11px] text-editor-text-muted font-medium">
-                Edit instruction
+                Что оставить в видео
               </label>
               <textarea
                 value={editPlanInstruction}
                 onChange={(event) => setEditPlanInstruction(event.target.value)}
                 rows={3}
-                placeholder="Make this tighter, remove repeated starts, and cut awkward pauses."
+                placeholder="Например: оставь всё, где мы обсуждаем, почему беременность плохо оптимизирована"
                 className="w-full resize-none rounded border border-editor-border bg-editor-surface px-2.5 py-2 text-xs text-editor-text placeholder:text-editor-text-muted/50 focus:border-editor-accent focus:outline-none"
               />
+            </div>
+            <div className="flex items-center justify-between gap-3 rounded border border-editor-border bg-editor-surface px-3 py-2">
+              <div>
+                <div className="text-[11px] font-medium">Запас на границах</div>
+                <div className="text-[10px] text-editor-text-muted">
+                  Добавляет контекст до и после найденной реплики
+                </div>
+              </div>
+              <label className="flex items-center gap-1 text-xs text-editor-text-muted">
+                <input
+                  type="number"
+                  min={0}
+                  max={3}
+                  step={0.1}
+                  value={topicContextPadding}
+                  onChange={(event) => setTopicContextPadding(Math.max(0, Math.min(3, Number(event.target.value) || 0)))}
+                  className="w-16 rounded border border-editor-border bg-editor-bg px-2 py-1 text-right text-editor-text focus:border-editor-accent focus:outline-none"
+                />
+                сек.
+              </label>
             </div>
             <div className="grid grid-cols-2 gap-2">
               <button
@@ -1290,7 +1374,7 @@ export default function AIPanel() {
                 ) : (
                   <>
                     <Sparkles className="w-4 h-4" />
-                    Plan Edits
+                    Найти по теме
                   </>
                 )}
               </button>
@@ -1338,6 +1422,19 @@ export default function AIPanel() {
                       {editPlanResult.summary}
                     </p>
                   )}
+                  {editPlanResult.metrics && (
+                    <div className="flex flex-wrap gap-1.5 text-[10px] text-editor-text-muted">
+                      <span className="rounded bg-editor-bg px-1.5 py-0.5">
+                        Блоков: {editPlanResult.metrics.chunkCount}
+                      </span>
+                      <span className="rounded bg-editor-bg px-1.5 py-0.5">
+                        Найдено: {formatClipTime(editPlanResult.metrics.selectedDuration)}
+                      </span>
+                      <span className="rounded bg-editor-bg px-1.5 py-0.5">
+                        Исходник: {formatClipTime(editPlanResult.metrics.sourceDuration)}
+                      </span>
+                    </div>
+                  )}
                   {editPlanResult.directorClip && (
                     <div className="rounded border border-editor-border bg-editor-bg px-2 py-1.5 text-[11px] text-editor-text-muted">
                       <div className="font-medium text-editor-text">
@@ -1361,7 +1458,26 @@ export default function AIPanel() {
                   )}
                 </div>
 
+                {editPlanResult.selectedSegments && editPlanResult.selectedSegments.length > 0 && (
+                  <div className="space-y-2">
+                    <div className="text-[11px] font-medium text-editor-success">
+                      Найденные фрагменты — останутся в видео
+                    </div>
+                    {editPlanResult.selectedSegments.map((segment) => (
+                      <TopicSelectionItem
+                        key={segment.id}
+                        segment={segment}
+                        onPreview={() => requestPreviewRange(segment.startTime, segment.endTime)}
+                      />
+                    ))}
+                  </div>
+                )}
+
                 {editPlanResult.suggestions.length > 0 ? (
+                  <>
+                    <div className="text-[11px] font-medium text-editor-warning">
+                      Остальной материал — предложено удалить
+                    </div>
                   <div className="space-y-2 max-h-[32rem] overflow-y-auto pr-1">
                     {editPlanResult.suggestions.map((suggestion) => (
                       <EditPlanReviewItem
@@ -1375,12 +1491,114 @@ export default function AIPanel() {
                       />
                     ))}
                   </div>
+                  </>
                 ) : (
                   <p className="rounded bg-editor-surface px-3 py-2 text-xs text-editor-text-muted">
-                    No safe edit suggestions were found for this instruction.
+                    Монтаж не изменён: удалений по этому запросу нет.
                   </p>
                 )}
               </div>
+            )}
+          </div>
+        )}
+
+        {activeTab === 'censor' && (
+          <div className="space-y-4">
+            <p className="text-xs leading-relaxed text-editor-text-muted">
+              Поиск работает локально по готовой расшифровке. Совпадения не меняют видео,
+              пока вы не примените к ним звуковой слой.
+            </p>
+            <label className="flex items-center justify-between gap-3 rounded border border-editor-border bg-editor-surface px-3 py-2 text-xs">
+              <span>
+                <span className="block font-medium">Русский словарь мата</span>
+                <span className="text-[10px] text-editor-text-muted">
+                  Проверяйте совпадения: распознавание речи может ошибаться
+                </span>
+              </span>
+              <input
+                type="checkbox"
+                checked={includeBuiltInProfanity}
+                onChange={(event) => setIncludeBuiltInProfanity(event.target.checked)}
+                className="h-4 w-4 accent-editor-accent"
+              />
+            </label>
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-medium text-editor-text-muted">
+                Дополнительные слова или фразы
+              </label>
+              <textarea
+                value={customCensorWords}
+                onChange={(event) => setCustomCensorWords(event.target.value)}
+                rows={3}
+                placeholder={'спойлерное имя, название проекта\nпо одной фразе или через запятую'}
+                className="w-full resize-none rounded border border-editor-border bg-editor-surface px-2.5 py-2 text-xs text-editor-text placeholder:text-editor-text-muted/50 focus:border-editor-accent focus:outline-none"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <label className="text-[11px] font-medium text-editor-text-muted">
+                Способ замены
+              </label>
+              <div className="grid grid-cols-3 gap-1.5">
+                {([
+                  ['bleep', 'Бип'],
+                  ['mute', 'Тишина'],
+                  ['room-tone', 'Фоновый шум'],
+                ] as const).map(([mode, label]) => (
+                  <button
+                    key={mode}
+                    onClick={() => setCensorMode(mode)}
+                    className={`rounded border px-2 py-2 text-[11px] transition-colors ${
+                      censorMode === mode
+                        ? 'border-editor-accent bg-editor-accent/15 text-editor-accent'
+                        : 'border-editor-border bg-editor-surface text-editor-text-muted hover:text-editor-text'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-2 rounded bg-editor-surface px-3 py-2">
+              <div>
+                <div className="text-xs font-medium">Найдено: {censorMatches.length}</div>
+                <div className="text-[10px] text-editor-text-muted">
+                  Ещё не обработано: {pendingCensorMatches.length}
+                </div>
+              </div>
+              <button
+                onClick={applyAllCensorMatches}
+                disabled={pendingCensorMatches.length === 0}
+                className="flex items-center gap-1 rounded bg-editor-accent px-2.5 py-1.5 text-[11px] font-medium text-white hover:bg-editor-accent-hover disabled:opacity-40"
+              >
+                <VolumeX className="h-3.5 w-3.5" />
+                Применить ко всем
+              </button>
+            </div>
+            {censorMatches.length > 0 ? (
+              <div className="max-h-[36rem] space-y-2 overflow-y-auto pr-1">
+                {censorMatches.map((match) => {
+                  const alreadyApplied = Array.from(
+                    { length: match.endWordIndex - match.startWordIndex + 1 },
+                    (_, offset) => match.startWordIndex + offset,
+                  ).every((index) => censoredWordIndices.has(index));
+                  return (
+                    <CensorMatchItem
+                      key={match.id}
+                      match={match}
+                      alreadyApplied={alreadyApplied}
+                      onPreview={() => requestPreviewRange(
+                        Math.max(0, match.startTime - 0.5),
+                        match.endTime + 0.5,
+                      )}
+                      onApply={() => applyCensorMatch(match)}
+                    />
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="rounded bg-editor-surface px-3 py-2 text-xs text-editor-text-muted">
+                Совпадений пока нет. Добавьте свои слова или включите встроенный словарь.
+              </p>
             )}
           </div>
         )}
@@ -1734,6 +1952,86 @@ export default function AIPanel() {
             )}
           </div>
         )}
+      </div>
+    </div>
+  );
+}
+
+function TopicSelectionItem({
+  segment,
+  onPreview,
+}: {
+  segment: TopicSelectionSegment;
+  onPreview: () => void;
+}) {
+  return (
+    <div className="space-y-2 rounded border border-editor-success/20 bg-editor-success/5 px-3 py-2 text-xs">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-[10px] text-editor-success">
+            {formatClipTime(segment.startTime)} – {formatClipTime(segment.endTime)}
+            {' '}· {Math.max(1, Math.round(segment.endTime - segment.startTime))} сек.
+          </div>
+          <div className="mt-1 line-clamp-3 text-editor-text">“{segment.text}”</div>
+          <div className="mt-1 text-[11px] leading-snug text-editor-text-muted">{segment.reason}</div>
+        </div>
+        {segment.confidence !== undefined && (
+          <span className="shrink-0 rounded bg-editor-success/15 px-1.5 py-0.5 text-[10px] text-editor-success">
+            {Math.round(segment.confidence * 100)}%
+          </span>
+        )}
+      </div>
+      <button
+        onClick={onPreview}
+        className="flex w-full items-center justify-center gap-1 rounded bg-editor-accent/20 px-2 py-1 text-[11px] text-editor-accent hover:bg-editor-accent/30"
+      >
+        <Play className="h-3 w-3" /> Прослушать фрагмент
+      </button>
+    </div>
+  );
+}
+
+function CensorMatchItem({
+  match,
+  alreadyApplied,
+  onPreview,
+  onApply,
+}: {
+  match: CensorMatch;
+  alreadyApplied: boolean;
+  onPreview: () => void;
+  onApply: () => void;
+}) {
+  return (
+    <div className="space-y-2 rounded bg-editor-surface px-3 py-2 text-xs">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <div className="font-medium text-editor-text">“{match.text}”</div>
+          <div className="text-[10px] text-editor-text-muted">
+            {formatClipTime(match.startTime)} – {formatClipTime(match.endTime)}
+            {' '}· {match.source === 'built-in' ? 'встроенный словарь' : 'ваш список'}
+          </div>
+        </div>
+        {alreadyApplied && (
+          <span className="rounded bg-editor-success/15 px-1.5 py-0.5 text-[10px] text-editor-success">
+            Применено
+          </span>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-1">
+        <button
+          onClick={onPreview}
+          className="flex items-center justify-center gap-1 rounded bg-editor-accent/20 px-2 py-1 text-[11px] text-editor-accent hover:bg-editor-accent/30"
+        >
+          <Play className="h-3 w-3" /> Проверить
+        </button>
+        <button
+          onClick={onApply}
+          disabled={alreadyApplied}
+          className="flex items-center justify-center gap-1 rounded bg-editor-success/20 px-2 py-1 text-[11px] text-editor-success hover:bg-editor-success/30 disabled:opacity-40"
+        >
+          <Check className="h-3 w-3" /> Применить
+        </button>
       </div>
     </div>
   );

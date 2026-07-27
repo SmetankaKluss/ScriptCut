@@ -62,6 +62,7 @@ const steps = [
   ['Hook frame smoke tests', 'npm', ['run', 'test:hook-frames', '--prefix', 'frontend']],
   ['Support report smoke tests', 'npm', ['run', 'test:support-report', '--prefix', 'frontend']],
   ['Playback sync smoke tests', 'npm', ['run', 'test:playback-sync', '--prefix', 'frontend']],
+  ['Censorship smoke tests', 'npm', ['run', 'test:censorship', '--prefix', 'frontend']],
 ];
 
 for (const [name, command, args] of steps) {
@@ -77,6 +78,9 @@ if (includePackageBuild) {
   const electronBuilderCache = packageEnv.ELECTRON_BUILDER_CACHE;
   fs.mkdirSync(electronCache, { recursive: true });
   fs.mkdirSync(electronBuilderCache, { recursive: true });
+  runStep('Standalone backend runtime build', 'npm', ['run', 'release:backend'], {
+    env: packageEnv,
+  });
   runStep(`Electron unpacked ${buildArchitecture} app build`, 'npm', ['run', `dist:dir:${buildArchitecture}`], {
     env: packageEnv,
   });

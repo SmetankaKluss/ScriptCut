@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useEditorStore } from '../store/editorStore';
 import { useAIStore } from '../store/aiStore';
-import type { ClipDraft, ClipSuggestion, DeletedRange, EditOperation, EditPlanResult, FillerWordResult, ProjectExportOptions, ProjectFile, Segment, Word } from '../types/project';
+import type { ClipDraft, ClipSuggestion, DeletedRange, EditOperation, EditPlanResult, FillerWordResult, ProjectAIWorkspace, ProjectExportOptions, ProjectFile, Segment, Word } from '../types/project';
 
 const AUTOSAVE_INTERVAL_MS = 5000;
 const PROJECT_APP = 'ScriptCut';
@@ -179,6 +179,9 @@ export function createProjectSnapshot() {
     exportOptions: state.exportOptions,
     aiWorkspace: {
       customFillerWords: aiState.customFillerWords,
+      customCensorWords: aiState.customCensorWords,
+      censorMode: aiState.censorMode,
+      includeBuiltInProfanity: aiState.includeBuiltInProfanity,
       fillerResult: aiState.fillerResult,
       fillerDecisions: aiState.fillerDecisions,
       editPlanInstruction: aiState.editPlanInstruction,
@@ -299,10 +302,13 @@ function finiteNumber(value: unknown, fallback: number) {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
 }
 
-function normalizeAIWorkspace(workspace: ProjectFile['aiWorkspace']) {
+function normalizeAIWorkspace(workspace: ProjectFile['aiWorkspace']): ProjectAIWorkspace {
   if (!workspace || typeof workspace !== 'object') {
     return {
       customFillerWords: '',
+      customCensorWords: '',
+      censorMode: 'bleep',
+      includeBuiltInProfanity: true,
       fillerResult: null,
       fillerDecisions: {},
       editPlanInstruction: '',
@@ -316,6 +322,13 @@ function normalizeAIWorkspace(workspace: ProjectFile['aiWorkspace']) {
   return {
     customFillerWords:
       typeof workspace.customFillerWords === 'string' ? workspace.customFillerWords : '',
+    customCensorWords:
+      typeof workspace.customCensorWords === 'string' ? workspace.customCensorWords : '',
+    censorMode: oneOf(workspace.censorMode, ['bleep', 'mute', 'room-tone'], 'bleep'),
+    includeBuiltInProfanity:
+      typeof workspace.includeBuiltInProfanity === 'boolean'
+        ? workspace.includeBuiltInProfanity
+        : true,
     fillerResult: normalizeFillerResult(workspace.fillerResult),
     fillerDecisions: normalizeFillerDecisions(workspace.fillerDecisions),
     editPlanInstruction:
@@ -375,9 +388,34 @@ function normalizeEditPlanResult(result: EditPlanResult | null | undefined) {
       typeof item.endTime === 'number' &&
       typeof item.reason === 'string',
   );
+  const selectedSegments = Array.isArray(result.selectedSegments)
+    ? result.selectedSegments.filter(
+        (item) =>
+          item &&
+          typeof item.id === 'string' &&
+          typeof item.startWordIndex === 'number' &&
+          typeof item.endWordIndex === 'number' &&
+          typeof item.startTime === 'number' &&
+          typeof item.endTime === 'number' &&
+          typeof item.text === 'string' &&
+          typeof item.reason === 'string',
+      )
+    : undefined;
+  const metrics =
+    result.metrics &&
+    typeof result.metrics.sourceDuration === 'number' &&
+    typeof result.metrics.selectedDuration === 'number' &&
+    typeof result.metrics.chunkCount === 'number'
+      ? result.metrics
+      : undefined;
   return {
     summary: typeof result.summary === 'string' ? result.summary : '',
     suggestions,
+    selectedSegments,
+    metrics,
+    directorClip: result.directorClip,
+    directorPackage: result.directorPackage,
+    directorNotes: result.directorNotes,
   };
 }
 
@@ -464,6 +502,7 @@ function normalizeEditOperations(operations: EditOperation[]) {
       typeof operation.id === 'string' &&
       (operation.kind === 'delete' ||
         operation.kind === 'mute' ||
+        operation.kind === 'bleep' ||
         operation.kind === 'caption-only' ||
         operation.kind === 'speaker-label' ||
         operation.kind === 'room-tone') &&

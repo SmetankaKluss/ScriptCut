@@ -72,6 +72,8 @@ export default function WaveformTimeline() {
       ctx.fillStyle =
         operation.kind === 'mute'
           ? 'rgba(99, 102, 241, 0.18)'
+          : operation.kind === 'bleep'
+            ? 'rgba(236, 72, 153, 0.22)'
           : operation.kind === 'room-tone'
             ? 'rgba(245, 158, 11, 0.18)'
           : operation.kind === 'caption-only'

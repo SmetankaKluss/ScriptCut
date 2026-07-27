@@ -5,6 +5,20 @@ const http = require('http');
 const { resolvePythonRuntime } = require('./python-runtime');
 const { bundledToolEnv } = require('./bundled-tools');
 
+function bundledBackendExecutable(isDev) {
+  if (isDev) return null;
+  const executableName = process.platform === 'win32'
+    ? 'scriptcut-backend.exe'
+    : 'scriptcut-backend';
+  const candidate = path.join(
+    process.resourcesPath,
+    'backend-runtime',
+    'scriptcut-backend',
+    executableName,
+  );
+  return require('fs').existsSync(candidate) ? candidate : null;
+}
+
 class PythonBackend {
   constructor(port, isDev) {
     this.port = port;
@@ -32,7 +46,12 @@ class PythonBackend {
       ? path.join(__dirname, '..', 'backend')
       : path.join(process.resourcesPath, 'backend');
 
-    const { command, argsPrefix } = resolvePythonRuntime();
+    const packagedBackend = bundledBackendExecutable(this.isDev);
+    const runtime = packagedBackend
+      ? { command: packagedBackend, argsPrefix: [] }
+      : resolvePythonRuntime();
+    const command = runtime.command;
+    const argsPrefix = packagedBackend ? [] : [...runtime.argsPrefix, '-m', 'uvicorn', 'main:app'];
 
     // Packaged builds use a per-launch token so another local process cannot
     // call the backend or stream arbitrary local files through it.
@@ -40,7 +59,6 @@ class PythonBackend {
 
     this.process = spawn(command, [
       ...argsPrefix,
-      '-m', 'uvicorn', 'main:app',
       '--host', '127.0.0.1',
       '--port', String(this.port),
     ], {

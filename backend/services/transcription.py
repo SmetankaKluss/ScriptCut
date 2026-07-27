@@ -1,21 +1,36 @@
 """Transcription service with normalized word-level output."""
 
+from __future__ import annotations
+
 import logging
 from pathlib import Path
 from typing import Literal, Optional
 
-import torch
-
-from utils.gpu_utils import get_optimal_device, configure_gpu
 from utils.audio_processing import extract_audio
 from utils.cache import load_from_cache, save_to_cache
 
 logger = logging.getLogger(__name__)
 
 _model_cache: dict = {}
-TranscriptionEngine = Literal["whisperx", "whisper", "parakeet", "auto"]
+TranscriptionEngine = Literal["faster-whisper", "whisperx", "whisper", "parakeet", "auto"]
 PARAKEET_DEFAULT_MODEL = "nvidia/parakeet-tdt-0.6b-v3"
 WHISPER_MODEL_NAMES = {"tiny", "base", "small", "medium", "large"}
+
+try:
+    import torch
+    from utils.gpu_utils import get_optimal_device
+    TORCH_AVAILABLE = True
+except ImportError:
+    torch = None
+    get_optimal_device = None
+    TORCH_AVAILABLE = False
+
+try:
+    from faster_whisper import WhisperModel
+    FASTER_WHISPER_AVAILABLE = True
+except ImportError:
+    WhisperModel = None
+    FASTER_WHISPER_AVAILABLE = False
 
 try:
     import whisperx
@@ -46,13 +61,13 @@ except Exception:
     pass
 
 
-def _get_device(use_gpu: bool = True) -> torch.device:
-    if use_gpu:
-        return get_optimal_device()
-    return torch.device("cpu")
+def _get_device(use_gpu: bool = True) -> str:
+    if use_gpu and TORCH_AVAILABLE and get_optimal_device:
+        return str(get_optimal_device())
+    return "cpu"
 
 
-def _load_model(model_name: str, device: torch.device, engine: TranscriptionEngine):
+def _load_model(model_name: str, device: str, engine: TranscriptionEngine):
     cache_key = f"{engine}_{model_name}_{device}"
     if cache_key in _model_cache:
         return _model_cache[cache_key]
@@ -60,18 +75,23 @@ def _load_model(model_name: str, device: torch.device, engine: TranscriptionEngi
     logger.info(f"Loading {engine} model: {model_name} on {device}")
     if engine == "parakeet":
         model = _load_parakeet_model(model_name, device)
+    elif engine == "faster-whisper" and FASTER_WHISPER_AVAILABLE:
+        faster_device = "cuda" if device.startswith("cuda") else "cpu"
+        compute_type = "float16" if faster_device == "cuda" else "int8"
+        model = WhisperModel(model_name, device=faster_device, compute_type=compute_type)
     elif engine == "whisperx" and WHISPERX_AVAILABLE:
-        compute_type = "float16" if device.type == "cuda" else "int8"
+        whisperx_device = "cuda" if device.startswith("cuda") else "cpu"
+        compute_type = "float16" if whisperx_device == "cuda" else "int8"
         model = whisperx.load_model(
             model_name,
-            device=str(device),
+            device=whisperx_device,
             compute_type=compute_type,
         )
     elif engine in {"whisper", "auto"} and WHISPER_AVAILABLE:
         model = whisper.load_model(model_name, device=device)
     else:
         raise RuntimeError(
-            "No requested transcription backend is installed. Install whisperx, openai-whisper, or Parakeet dependencies."
+            "No requested transcription backend is installed. Install faster-whisper, WhisperX, openai-whisper, or Parakeet dependencies."
         )
 
     _model_cache[cache_key] = model
@@ -80,12 +100,14 @@ def _load_model(model_name: str, device: torch.device, engine: TranscriptionEngi
 
 def _resolve_engine(engine: TranscriptionEngine) -> TranscriptionEngine:
     if engine != "auto":
-        if engine not in {"whisperx", "whisper", "parakeet"}:
+        if engine not in {"faster-whisper", "whisperx", "whisper", "parakeet"}:
             raise RuntimeError(f"Unknown transcription engine: {engine}")
         if engine == "parakeet" and not NEMO_AVAILABLE:
             raise RuntimeError(
                 "Parakeet TDT v3 is not available. Install NVIDIA NeMo ASR dependencies or choose WhisperX/Whisper."
             )
+        if engine == "faster-whisper" and not FASTER_WHISPER_AVAILABLE:
+            raise RuntimeError("faster-whisper is not installed. Run the standard backend setup.")
         if engine == "whisperx" and not WHISPERX_AVAILABLE:
             raise RuntimeError("WhisperX is not installed. Install whisperx or choose another transcription engine.")
         if engine == "whisper" and not WHISPER_AVAILABLE:
@@ -93,14 +115,18 @@ def _resolve_engine(engine: TranscriptionEngine) -> TranscriptionEngine:
         return engine
     if NEMO_AVAILABLE:
         return "parakeet"
+    if FASTER_WHISPER_AVAILABLE:
+        return "faster-whisper"
     if WHISPERX_AVAILABLE:
         return "whisperx"
     if WHISPER_AVAILABLE:
         return "whisper"
-    raise RuntimeError("No transcription backend is installed. Install NVIDIA NeMo ASR, whisperx, or openai-whisper.")
+    raise RuntimeError(
+        "No transcription backend is installed. Install faster-whisper, NVIDIA NeMo ASR, WhisperX, or openai-whisper."
+    )
 
 
-def _load_parakeet_model(model_name: str, device: torch.device):
+def _load_parakeet_model(model_name: str, device: str):
     if NEMO_AVAILABLE:
         model = nemo_asr.models.ASRModel.from_pretrained(model_name=model_name)
         if hasattr(model, "to"):
@@ -117,9 +143,25 @@ def _load_parakeet_model(model_name: str, device: torch.device):
 
 def get_transcription_engine_status() -> dict:
     return {
-        "default_engine": "parakeet" if NEMO_AVAILABLE else "whisperx" if WHISPERX_AVAILABLE else "whisper" if WHISPER_AVAILABLE else None,
+        "default_engine": (
+            "parakeet"
+            if NEMO_AVAILABLE
+            else "faster-whisper"
+            if FASTER_WHISPER_AVAILABLE
+            else "whisperx"
+            if WHISPERX_AVAILABLE
+            else "whisper"
+            if WHISPER_AVAILABLE
+            else None
+        ),
         "default_model": PARAKEET_DEFAULT_MODEL if NEMO_AVAILABLE else "base",
         "engines": {
+            "faster-whisper": {
+                "available": FASTER_WHISPER_AVAILABLE,
+                "default_model": "base",
+                "label": "Faster Whisper word timestamps",
+                "first_class": True,
+            },
             "parakeet": {
                 "available": NEMO_AVAILABLE,
                 "default_model": PARAKEET_DEFAULT_MODEL,
@@ -191,6 +233,8 @@ def transcribe_audio(
 
     if resolved_engine == "parakeet":
         result = _transcribe_parakeet(model, str(audio_path))
+    elif resolved_engine == "faster-whisper":
+        result = _transcribe_faster_whisper(model, str(audio_path), language)
     elif resolved_engine == "whisperx":
         result = _transcribe_whisperx(model, str(audio_path), device, language)
     else:
@@ -203,6 +247,45 @@ def transcribe_audio(
         save_to_cache(file_path, result, model_name, cache_operation)
 
     return result
+
+
+def _transcribe_faster_whisper(model, audio_path: str, language: Optional[str]) -> dict:
+    options = {
+        "word_timestamps": True,
+        "vad_filter": True,
+    }
+    if language:
+        options["language"] = language
+
+    segment_iterator, info = model.transcribe(audio_path, **options)
+    words = []
+    segments = []
+    for segment_id, segment in enumerate(segment_iterator):
+        segment_words = []
+        for item in segment.words or []:
+            word = {
+                "word": str(item.word or "").strip(),
+                "start": round(float(item.start or 0), 3),
+                "end": round(float(item.end or item.start or 0), 3),
+                "confidence": round(float(item.probability or 0), 3),
+            }
+            if not word["word"]:
+                continue
+            words.append(word)
+            segment_words.append(word)
+        segments.append({
+            "id": segment_id,
+            "start": round(float(segment.start or 0), 3),
+            "end": round(float(segment.end or segment.start or 0), 3),
+            "text": str(segment.text or "").strip(),
+            "words": segment_words,
+        })
+
+    return {
+        "words": words,
+        "segments": segments,
+        "language": str(getattr(info, "language", None) or language or "auto"),
+    }
 
 
 def _transcribe_parakeet(model_bundle, audio_path: str) -> dict:
@@ -263,7 +346,7 @@ def _normalize_parakeet_segments(segment_stamps: list, words: list, fallback_tex
     return segments
 
 
-def _transcribe_whisperx(model, audio_path: str, device: torch.device, language: Optional[str]) -> dict:
+def _transcribe_whisperx(model, audio_path: str, device: str, language: Optional[str]) -> dict:
     audio = whisperx.load_audio(audio_path)
     transcribe_opts = {}
     if language:
@@ -274,14 +357,14 @@ def _transcribe_whisperx(model, audio_path: str, device: torch.device, language:
 
     align_model, align_metadata = whisperx.load_align_model(
         language_code=detected_language,
-        device=str(device),
+        device=device,
     )
     aligned = whisperx.align(
         result["segments"],
         align_model,
         align_metadata,
         audio,
-        str(device),
+        device,
         return_char_alignments=False,
     )
 

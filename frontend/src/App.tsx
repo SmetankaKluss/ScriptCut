@@ -47,7 +47,7 @@ const ONBOARDING_DISMISSED_KEY = 'scriptcut.onboarding.dismissed.v1';
 
 type Panel = 'ai' | 'settings' | 'export' | null;
 type WorkflowIntent = 'full-video' | 'short';
-type TranscriptionEngine = 'auto' | 'whisperx' | 'whisper' | 'parakeet';
+type TranscriptionEngine = 'auto' | 'faster-whisper' | 'whisperx' | 'whisper' | 'parakeet';
 type TranscriptionEngineStatus = {
   default_engine?: TranscriptionEngine | null;
   default_model?: string;
@@ -72,10 +72,16 @@ type SystemChecksResponse = {
 
 const TRANSCRIPTION_MODELS: Record<TranscriptionEngine, Array<{ value: string; label: string }>> = {
   auto: [
-    { value: 'nvidia/parakeet-tdt-0.6b-v3', label: 'Auto best available' },
-    { value: 'base', label: 'base (~140 MB, Whisper fallback)' },
+    { value: 'base', label: 'Auto best available' },
     { value: 'small', label: 'small (~460 MB, better)' },
     { value: 'medium', label: 'medium (~1.5 GB, high accuracy)' },
+  ],
+  'faster-whisper': [
+    { value: 'tiny', label: 'tiny (~75 MB, fastest)' },
+    { value: 'base', label: 'base (~140 MB, fast)' },
+    { value: 'small', label: 'small (~460 MB, good)' },
+    { value: 'medium', label: 'medium (~1.5 GB, better)' },
+    { value: 'large-v3', label: 'large-v3 (~3 GB, best)' },
   ],
   whisperx: [
     { value: 'tiny', label: 'tiny (~75 MB, fastest)' },
@@ -123,7 +129,7 @@ export default function App() {
   const [activePanel, setActivePanel] = useState<Panel>(null);
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [transcriptionEngine, setTranscriptionEngine] = useState<TranscriptionEngine>('auto');
-  const [transcriptionModel, setTranscriptionModel] = useState('nvidia/parakeet-tdt-0.6b-v3');
+  const [transcriptionModel, setTranscriptionModel] = useState('base');
   const [transcriptionEngineStatus, setTranscriptionEngineStatus] = useState<TranscriptionEngineStatus | null>(null);
   const [transcriptionMessage, setTranscriptionMessage] = useState('');
   const [transcriptionError, setTranscriptionError] = useState('');
@@ -550,12 +556,12 @@ export default function App() {
         )}
         <div className="flex flex-col items-center gap-3">
           <img
-            src="/brand/scriptcut-mark.svg"
+            src="./brand/scriptcut-mark.svg"
             alt=""
             className="h-16 w-16"
           />
           <img
-            src="/brand/scriptcut-wordmark.svg"
+            src="./brand/scriptcut-wordmark.svg"
             alt="ScriptCut"
             className="h-auto w-[220px] max-w-full"
           />
@@ -588,6 +594,7 @@ export default function App() {
               className="px-3 py-1.5 bg-editor-bg border border-editor-border rounded-md text-xs text-editor-text focus:outline-none focus:border-editor-accent"
             >
               <option value="auto">Auto best available</option>
+              <option value="faster-whisper">Faster Whisper (recommended)</option>
               <option value="parakeet">Parakeet TDT v3 multilingual</option>
               <option value="whisperx">WhisperX aligned</option>
               <option value="whisper">Whisper fallback</option>
@@ -771,7 +778,7 @@ export default function App() {
       {/* Top bar */}
       <header className="h-12 flex items-center justify-between px-4 border-b border-editor-border shrink-0">
         <div className="flex items-center gap-3">
-          <img src="/brand/scriptcut-mark.svg" alt="ScriptCut" className="h-5 w-5" />
+          <img src="./brand/scriptcut-mark.svg" alt="ScriptCut" className="h-5 w-5" />
           <div className="min-w-0">
             <span className="block max-w-[300px] truncate text-sm font-medium">
               {videoPath.split(/[\\/]/).pop()}
@@ -1114,9 +1121,12 @@ function getSetupGuidance(row: SystemCheck) {
 
   if (row.label === 'Python') {
     return {
-      message: 'This alpha uses Python 3.11 for its local editing engine. Install it once, restart ScriptCut, then refresh these checks.',
-      link: RELEASE_LINKS.pythonDownloads,
-      linkLabel: 'Install Python for macOS',
+      message: IS_ELECTRON
+        ? 'The bundled backend runtime could not be verified. Reinstall this ScriptCut build, then refresh these checks.'
+        : 'Source development uses Python 3.11. Install it, restart the backend, then refresh these checks.',
+      ...(IS_ELECTRON
+        ? { link: RELEASE_LINKS.latestRelease, linkLabel: 'Download this build again' }
+        : { link: RELEASE_LINKS.pythonDownloads, linkLabel: 'Install Python' }),
     };
   }
 

@@ -189,7 +189,7 @@ ScriptCut is an open-source, local-first desktop video editor for creators.
 
 - This package is for ${releasePlatformLabel(arch)}.
 - It includes portable FFmpeg and FFprobe for local export.
-- This developer alpha still uses a compatible local Python runtime and ScriptCut backend dependency set. See the install guide before downloading.
+- It includes a standalone ScriptCut backend and does not require a separate Python installation.
 
 ## Alpha Status
 

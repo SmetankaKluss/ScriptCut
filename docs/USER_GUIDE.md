@@ -13,7 +13,7 @@ ScriptCut lets you edit spoken video by editing the transcript. Delete words to 
 3. Open the DMG and launch ScriptCut.
 4. If macOS warns that the app is from an unidentified developer during alpha testing, open it from System Settings after confirming you trust the downloaded release.
 
-The alpha includes FFmpeg for export but still uses a compatible local Python runtime and ScriptCut backend dependency set for editing. The setup assistant tells you whether anything is missing. If there is no release download yet, use the repository setup in [Install ScriptCut](./INSTALL.md).
+The alpha includes FFmpeg and a standalone local backend. No separate Python installation is needed. If there is no release download yet, use the repository setup in [Install ScriptCut](./INSTALL.md).
 
 ## First Launch
 
@@ -21,7 +21,7 @@ ScriptCut checks the local tools it needs before you edit:
 
 - Desktop app access for opening and saving local files.
 - Local backend for transcription and exports.
-- Python runtime for the backend.
+- Bundled backend runtime.
 - FFmpeg for video export.
 - Transcription engine availability.
 

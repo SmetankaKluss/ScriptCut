@@ -4,9 +4,16 @@ import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from services.ai_provider import AIProvider, detect_filler_words, create_clip_suggestion, create_clip_metadata, create_edit_plan
+from services.ai_provider import (
+    AIProvider,
+    create_clip_metadata,
+    create_clip_suggestion,
+    create_edit_plan,
+    create_topic_edit_plan,
+    detect_filler_words,
+)
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -53,7 +60,7 @@ class ClipMetadataRequest(BaseModel):
 
 class EditPlanRequest(BaseModel):
     instruction: str
-    transcript: str
+    transcript: str = ""
     words: List[WordInfo]
     provider: str = "ollama"
     model: Optional[str] = None
@@ -62,6 +69,7 @@ class EditPlanRequest(BaseModel):
     mode: Optional[str] = None
     platform: Optional[str] = None
     target_duration: Optional[int] = None
+    context_padding: float = Field(default=0.45, ge=0, le=3)
 
 
 class ModelListRequest(BaseModel):
@@ -160,6 +168,18 @@ def run_clip_metadata(req: ClipMetadataRequest, progress_callback=None):
 def run_edit_plan(req: EditPlanRequest, progress_callback=None):
     _progress(progress_callback, 10, "Preparing edit plan")
     words_dicts = [w.model_dump() for w in req.words]
+    if str(req.mode or "").lower() == "topic":
+        return create_topic_edit_plan(
+            instruction=req.instruction,
+            words=words_dicts,
+            provider=req.provider,
+            model=req.model,
+            api_key=req.api_key,
+            base_url=req.base_url,
+            context_padding=req.context_padding,
+            progress_callback=progress_callback,
+        )
+
     _progress(progress_callback, 35, "Calling AI editor")
     result = create_edit_plan(
         instruction=req.instruction,

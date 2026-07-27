@@ -26,7 +26,7 @@ export interface DeletedRange extends TimeRange {
   wordIndices: number[];
 }
 
-export type EditOperationKind = 'delete' | 'mute' | 'caption-only' | 'speaker-label' | 'room-tone';
+export type EditOperationKind = 'delete' | 'mute' | 'bleep' | 'caption-only' | 'speaker-label' | 'room-tone';
 
 export interface EditOperation extends TimeRange {
   id: string;
@@ -55,6 +55,9 @@ export interface ProjectFile {
 
 export interface ProjectAIWorkspace {
   customFillerWords?: string;
+  customCensorWords?: string;
+  censorMode?: CensorMode;
+  includeBuiltInProfanity?: boolean;
   fillerResult?: FillerWordResult | null;
   fillerDecisions?: Record<number, FillerReviewDecision>;
   editPlanInstruction?: string;
@@ -63,6 +66,8 @@ export interface ProjectAIWorkspace {
   clipSuggestions?: ClipSuggestion[];
   clipDrafts?: ClipDraft[];
 }
+
+export type CensorMode = 'bleep' | 'mute' | 'room-tone';
 
 export interface TranscriptionResult {
   words: Word[];
@@ -113,7 +118,7 @@ export interface CaptionStyle {
   animation?: 'none' | 'pop' | 'karaoke';
 }
 
-export type AIProvider = 'ollama' | 'openai' | 'claude' | '9router';
+export type AIProvider = 'ollama' | 'openai' | 'claude' | 'xai' | '9router';
 
 export interface AIProviderConfig {
   provider: AIProvider;
@@ -144,6 +149,12 @@ export interface EditPlanSuggestion {
 export interface EditPlanResult {
   summary: string;
   suggestions: EditPlanSuggestion[];
+  selectedSegments?: TopicSelectionSegment[];
+  metrics?: {
+    sourceDuration: number;
+    selectedDuration: number;
+    chunkCount: number;
+  };
   directorClip?: ClipSuggestion;
   directorPackage?: {
     hook?: string;
@@ -156,6 +167,17 @@ export interface EditPlanResult {
 }
 
 export type EditPlanReviewDecision = 'accepted' | 'rejected';
+
+export interface TopicSelectionSegment {
+  id: string;
+  startWordIndex: number;
+  endWordIndex: number;
+  startTime: number;
+  endTime: number;
+  text: string;
+  reason: string;
+  confidence?: number;
+}
 
 export interface ClipSuggestion {
   title: string;

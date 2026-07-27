@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { AIProvider, AIProviderConfig, FillerWordResult, ClipSuggestion, ClipDraft, ProjectAIWorkspace, FillerReviewDecision, EditPlanResult, EditPlanReviewDecision } from '../types/project';
+import type { AIProvider, AIProviderConfig, CensorMode, FillerWordResult, ClipSuggestion, ClipDraft, ProjectAIWorkspace, FillerReviewDecision, EditPlanResult, EditPlanReviewDecision } from '../types/project';
 
 const ENCRYPTED_KEY_PREFIX = 'scriptcut_enc_';
 const LEGACY_ENCRYPTED_KEY_PREFIX = 'aive_enc_';
@@ -19,6 +19,7 @@ const DEFAULT_PROVIDERS: Record<AIProvider, AIProviderConfig> = {
   ollama: { provider: 'ollama', baseUrl: 'http://localhost:11434', model: 'llama3' },
   openai: { provider: 'openai', apiKey: '', model: 'gpt-4o' },
   claude: { provider: 'claude', apiKey: '', model: 'claude-sonnet-4-20250514' },
+  xai: { provider: 'xai', apiKey: '', baseUrl: 'https://api.x.ai/v1', model: 'grok-4.5' },
   '9router': { provider: '9router', apiKey: '', baseUrl: 'http://localhost:20128/v1', model: 'gpt-4o' },
 };
 
@@ -26,6 +27,9 @@ interface AIState {
   providers: Record<AIProvider, AIProviderConfig>;
   defaultProvider: AIProvider;
   customFillerWords: string;
+  customCensorWords: string;
+  censorMode: CensorMode;
+  includeBuiltInProfanity: boolean;
   fillerResult: FillerWordResult | null;
   fillerDecisions: Record<number, FillerReviewDecision>;
   editPlanInstruction: string;
@@ -42,6 +46,9 @@ interface AIActions {
   setProviderConfig: (provider: AIProvider, config: Partial<AIProviderConfig>) => void;
   setDefaultProvider: (provider: AIProvider) => void;
   setCustomFillerWords: (words: string) => void;
+  setCustomCensorWords: (words: string) => void;
+  setCensorMode: (mode: CensorMode) => void;
+  setIncludeBuiltInProfanity: (enabled: boolean) => void;
   setFillerResult: (result: FillerWordResult | null) => void;
   setFillerDecisions: (
     decisions:
@@ -100,6 +107,9 @@ export const useAIStore = create<AIState & AIActions>()(
       providers: DEFAULT_PROVIDERS,
       defaultProvider: 'ollama',
       customFillerWords: '',
+      customCensorWords: '',
+      censorMode: 'bleep',
+      includeBuiltInProfanity: true,
       fillerResult: null,
       fillerDecisions: {},
       editPlanInstruction: '',
@@ -127,6 +137,9 @@ export const useAIStore = create<AIState & AIActions>()(
       setDefaultProvider: (provider) => set({ defaultProvider: provider }),
 
       setCustomFillerWords: (words) => set({ customFillerWords: words }),
+      setCustomCensorWords: (words) => set({ customCensorWords: words }),
+      setCensorMode: (mode) => set({ censorMode: mode }),
+      setIncludeBuiltInProfanity: (enabled) => set({ includeBuiltInProfanity: enabled }),
 
       setFillerResult: (result) => set({ fillerResult: result, fillerDecisions: {} }),
 
@@ -159,6 +172,10 @@ export const useAIStore = create<AIState & AIActions>()(
       loadProjectAIState: (workspace) =>
         set({
           customFillerWords: workspace?.customFillerWords ?? get().customFillerWords,
+          customCensorWords: workspace?.customCensorWords ?? get().customCensorWords,
+          censorMode: workspace?.censorMode ?? get().censorMode,
+          includeBuiltInProfanity:
+            workspace?.includeBuiltInProfanity ?? get().includeBuiltInProfanity,
           fillerResult: workspace?.fillerResult ?? null,
           fillerDecisions: workspace?.fillerDecisions ?? {},
           editPlanInstruction: workspace?.editPlanInstruction ?? '',
@@ -171,9 +188,10 @@ export const useAIStore = create<AIState & AIActions>()(
         }),
 
       hydrateKeys: async () => {
-        const [openaiKey, claudeKey, routerKey] = await Promise.all([
+        const [openaiKey, claudeKey, xaiKey, routerKey] = await Promise.all([
           loadAndDecrypt('openai_apiKey'),
           loadAndDecrypt('claude_apiKey'),
+          loadAndDecrypt('xai_apiKey'),
           loadAndDecrypt('9router_apiKey'),
         ]);
         const state = get();
@@ -182,6 +200,7 @@ export const useAIStore = create<AIState & AIActions>()(
             ...state.providers,
             openai: { ...state.providers.openai, apiKey: openaiKey },
             claude: { ...state.providers.claude, apiKey: claudeKey },
+            xai: { ...state.providers.xai, apiKey: xaiKey },
             '9router': { ...state.providers['9router'], apiKey: routerKey },
           },
           _keysHydrated: true,
@@ -195,10 +214,14 @@ export const useAIStore = create<AIState & AIActions>()(
           ollama: { ...state.providers.ollama, apiKey: undefined },
           openai: { ...state.providers.openai, apiKey: '' },
           claude: { ...state.providers.claude, apiKey: '' },
+          xai: { ...state.providers.xai, apiKey: '' },
           '9router': { ...state.providers['9router'], apiKey: '' },
         },
         defaultProvider: state.defaultProvider,
         customFillerWords: state.customFillerWords,
+        customCensorWords: state.customCensorWords,
+        censorMode: state.censorMode,
+        includeBuiltInProfanity: state.includeBuiltInProfanity,
       }),
       merge: (persisted, current) => {
         const persistedState = persisted as Partial<AIState> | undefined;

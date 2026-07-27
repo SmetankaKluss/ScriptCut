@@ -20,7 +20,12 @@ export default function VideoPlayer() {
   const [displayTime, setDisplayTime] = useState(0);
   const hasPlaybackEdits =
     deletedRanges.length > 0 ||
-    editOperations.some((operation) => operation.kind === 'mute' || operation.kind === 'room-tone');
+    editOperations.some(
+      (operation) =>
+        operation.kind === 'mute' ||
+        operation.kind === 'bleep' ||
+        operation.kind === 'room-tone',
+    );
   const playbackState = getPlaybackTimeState(displayTime, duration, deletedRanges, previewCuts);
 
   useEffect(() => {

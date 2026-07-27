@@ -202,7 +202,7 @@ ipcMain.handle('safe-storage:decrypt', (_event, encrypted) => {
 });
 
 ipcMain.handle('get-backend-url', () => {
-  return `http://localhost:${BACKEND_PORT}`;
+  return `http://127.0.0.1:${BACKEND_PORT}`;
 });
 
 ipcMain.handle('app:getStartupStatus', () => ({

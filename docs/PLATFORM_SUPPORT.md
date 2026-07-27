@@ -4,7 +4,7 @@ This page describes the current ScriptCut alpha support boundary. It is intentio
 
 | Platform | Current status | Distribution | Notes |
 | --- | --- | --- | --- |
-| macOS Apple Silicon (arm64) | Verified alpha path | GitHub Release DMG | Portable FFmpeg/FFprobe is bundled and verified inside the packaged app. A local Python 3.10-3.12 runtime is still needed for the backend. |
+| macOS Apple Silicon (arm64) | Verified alpha path | GitHub Release DMG | Portable FFmpeg/FFprobe and the standalone backend are bundled and verified inside the packaged app. |
 | macOS Intel (x64) | Preparation supported, release not yet published | Source / maintainer build | Build and validate on a native Intel Mac with a matching x64 FFmpeg bundle before publishing an Intel DMG. |
 | Windows | Source development only | No public installer | Do not treat the current NSIS config as a supported release until packaging, FFmpeg, and export have been verified on Windows. |
 | Linux | Source development only | No public installer | Do not treat the current AppImage config as a supported release until packaging, FFmpeg, and export have been verified on Linux. |
@@ -13,15 +13,13 @@ This page describes the current ScriptCut alpha support boundary. It is intentio
 ## What The Desktop Alpha Includes
 
 - Electron desktop application.
-- Local FastAPI backend source.
+- Standalone local FastAPI backend runtime.
 - Portable FFmpeg and FFprobe for the matching macOS architecture.
 - Export preflight and a caption capability check.
 
 ## Current Alpha Prerequisite
 
-The desktop alpha does not yet bundle a complete Python runtime and machine-learning dependency set. It uses a compatible local Python 3.10-3.12 runtime to run transcription and editing. Python 3.11 is the recommended option.
-
-The first-run setup assistant checks this requirement and links to a recovery path. This is a release constraint, not an optional feature.
+The packaged desktop alpha does not require a separate Python installation. Source development and maintainer builds still use Python 3.11.
 
 ## Caption Delivery
 
@@ -33,6 +31,7 @@ Run this on the target Mac before creating a public alpha:
 
 ```bash
 npm run release:ffmpeg
+npm run release:backend
 npm run release:platform
 ```
 

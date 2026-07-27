@@ -45,9 +45,9 @@ If no release asset is available yet, ScriptCut can still be run from source usi
 
 ## Alpha Compatibility
 
-The current downloadable alpha is verified for **macOS Apple Silicon (arm64)**. It includes a portable FFmpeg/FFprobe bundle for local export.
+The current downloadable alpha is verified for **macOS Apple Silicon (arm64)**. It includes portable FFmpeg/FFprobe and a standalone backend, so friends do not need to install Python or backend packages.
 
-This alpha is not yet a fully self-contained installer: it uses a compatible local Python 3.10-3.12 runtime and backend dependency set for editing. The setup assistant reports what is missing at launch and links to the simplest recovery path. See [Platform Support](docs/PLATFORM_SUPPORT.md) for the current support matrix before downloading.
+The app is currently unsigned. On first launch, macOS may require **Control-click → Open**. See [Platform Support](docs/PLATFORM_SUPPORT.md) for the current support matrix before downloading.
 
 ## Which Version Should I Use?
 
@@ -60,12 +60,16 @@ Use the **source/dev setup** only if you are contributing, testing unreleased ch
 ## What You Can Do
 
 - Open a video or audio file and get a word-level transcript.
+- Compile every passage related to a natural-language topic from a long VOD. The
+  transcript is analyzed in chunks and every proposed removal stays reviewable.
 - Edit the video by deleting, restoring, muting, or caption-hiding transcript words.
+- Detect Russian profanity and custom words/phrases locally, then censor them with
+  a bleep, silence, or room tone.
 - Preview edited playback before exporting.
 - Generate AI edit plans, filler-word suggestions, and short clip drafts.
 - Review clip drafts, package social metadata, choose hook frames, and batch export.
 - Export source, square, or vertical videos with optional burned-in captions.
-- Work locally first, with optional providers like Ollama, OpenAI, Claude, and 9Router.
+- Work locally first, with optional providers like Ollama, OpenAI, Claude, Grok, and 9Router.
 
 ## Relationship to CutScript
 
@@ -85,7 +89,8 @@ Goal: get from a local video to a finished export in a few minutes.
 
 1. Download and open the desktop app from the latest release.
 2. Open a local video or audio file.
-3. Choose the transcription engine. Auto/Parakeet is recommended when available.
+3. Choose the transcription engine. Auto/Faster Whisper is the reliable default;
+   Parakeet remains available when its optional package is installed.
 4. Wait for the word-level transcript.
 5. Delete transcript words to cut the video, or mute/hide words when needed.
 6. Preview the edited playback.
@@ -138,6 +143,14 @@ export SCRIPTCUT_PYTHON_PATH=/absolute/path/to/python
 ```bash
 npm run setup
 npm run doctor
+```
+
+The core setup intentionally installs only the dependencies needed for editing,
+transcription, AI analysis, captions, and export. Optional local background
+removal can be added afterward:
+
+```bash
+npm run setup:optional
 ```
 
 Release maintainers can prepare local FFmpeg binaries for packaging with:
@@ -219,11 +232,13 @@ scriptcut/
 | FFmpeg re-encode export | Done |
 | Job progress, cancellation, logs, retry | Done |
 | AI edit plans with review/apply queue | Done |
+| Chunked topic compilation for long VODs | Done |
+| Russian/custom-word censorship with bleep | Done |
 | AI filler review queue | Done |
 | Editable AI clip drafts | Done |
 | Clip readiness scoring | Done |
 | Creator export templates | Done |
-| Ollama + OpenAI + Claude + 9router | Done |
+| Ollama + OpenAI + Claude + Grok + 9router | Done |
 | Word-level captions | Done |
 | Caption designer and burn-in export | Done |
 | Social presets and reframe controls | Done |

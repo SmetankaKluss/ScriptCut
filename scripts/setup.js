@@ -51,9 +51,10 @@ function runPython(pythonCommand, args) {
 
 function main() {
   const backendOnly = process.argv.includes('--backend-only');
+  const optionalOnly = process.argv.includes('--optional-only');
   console.log('Setting up ScriptCut development environment.');
 
-  if (!backendOnly) {
+  if (!backendOnly && !optionalOnly) {
     run('npm', ['ci']);
     run('npm', ['ci'], { cwd: path.join(root, 'frontend') });
   }
@@ -64,11 +65,24 @@ function main() {
   }
 
   run(venvPython, ['-m', 'pip', 'install', '--upgrade', 'pip']);
-  run(venvPython, ['-m', 'pip', 'install', '-r', 'requirements.txt'], {
-    cwd: path.join(root, 'backend'),
-  });
+  run(venvPython, ['-m', 'pip', 'install', 'setuptools<81', 'wheel']);
+  if (optionalOnly) {
+    run(venvPython, ['-m', 'pip', 'install', '-r', 'requirements-optional.txt'], {
+      cwd: path.join(root, 'backend'),
+    });
+  } else {
+    run(venvPython, ['-m', 'pip', 'install', '-r', 'requirements.txt'], {
+      cwd: path.join(root, 'backend'),
+    });
+  }
 
-  console.log(backendOnly ? '\nBackend setup complete. Run npm run doctor.' : '\nSetup complete. Run npm run doctor, then npm run dev.');
+  console.log(
+    optionalOnly
+      ? '\nOptional tools installed.'
+      : backendOnly
+        ? '\nBackend setup complete. Run npm run doctor.'
+        : '\nSetup complete. Run npm run doctor, then npm run dev.',
+  );
 }
 
 try {

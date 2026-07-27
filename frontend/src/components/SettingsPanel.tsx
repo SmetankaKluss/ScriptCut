@@ -2,16 +2,17 @@ import { useAIStore } from '../store/aiStore';
 import { useState, useEffect, useCallback } from 'react';
 import type { AIProvider } from '../types/project';
 import { useEditorStore } from '../store/editorStore';
-import { Bot, Cloud, Brain, RefreshCw, Route, ShieldCheck, Copy, CheckCircle2, AlertCircle, Download, ExternalLink, MonitorCheck } from 'lucide-react';
+import { Bot, Cloud, Brain, Sparkles, RefreshCw, Route, ShieldCheck, Copy, CheckCircle2, AlertCircle, Download, ExternalLink, MonitorCheck } from 'lucide-react';
 import { RELEASE_LINKS, SCRIPTCUT_VERSION } from '../utils/releaseInfo';
 import { buildSupportReport } from '../utils/supportReport';
 
-const AI_PROVIDERS: AIProvider[] = ['ollama', 'openai', 'claude', '9router'];
+const AI_PROVIDERS: AIProvider[] = ['ollama', 'openai', 'claude', 'xai', '9router'];
 
 const providerLabels: Record<AIProvider, string> = {
   ollama: 'Ollama',
   openai: 'OpenAI',
   claude: 'Claude',
+  xai: 'Grok',
   '9router': '9router',
 };
 
@@ -106,6 +107,7 @@ export default function SettingsPanel() {
     ollama: <Bot className="w-4 h-4" />,
     openai: <Cloud className="w-4 h-4" />,
     claude: <Brain className="w-4 h-4" />,
+    xai: <Sparkles className="w-4 h-4" />,
     '9router': <Route className="w-4 h-4" />,
   };
 
@@ -123,6 +125,11 @@ export default function SettingsPanel() {
     claude: {
       ok: !!providers.claude.apiKey,
       label: providers.claude.apiKey ? 'Key saved' : 'Needs key',
+      local: false,
+    },
+    xai: {
+      ok: !!providers.xai.apiKey,
+      label: providers.xai.apiKey ? 'Key saved' : 'Needs key',
       local: false,
     },
     '9router': {
@@ -240,7 +247,7 @@ export default function SettingsPanel() {
       {/* Default provider selector */}
       <div className="space-y-2">
         <label className="text-xs text-editor-text-muted font-medium">Default AI Provider</label>
-        <div className="grid grid-cols-4 gap-1.5">
+        <div className="grid grid-cols-5 gap-1.5">
           {AI_PROVIDERS.map((p) => (
             <button
               key={p}
@@ -381,6 +388,23 @@ export default function SettingsPanel() {
           value={providers.claude.model}
           onChange={(v) => setProviderConfig('claude', { model: v })}
           placeholder="claude-sonnet-4-20250514"
+        />
+      </ProviderSection>
+
+      <ProviderSection title="Grok (xAI)" icon={providerIcons.xai}>
+        <ProviderNote>AI actions send transcript text to the official xAI API when this provider is selected.</ProviderNote>
+        <InputField
+          label="API Key"
+          value={providers.xai.apiKey || ''}
+          onChange={(v) => setProviderConfig('xai', { apiKey: v })}
+          placeholder="xai-..."
+          type="password"
+        />
+        <InputField
+          label="Model"
+          value={providers.xai.model}
+          onChange={(v) => setProviderConfig('xai', { model: v })}
+          placeholder="grok-4.5"
         />
       </ProviderSection>
 

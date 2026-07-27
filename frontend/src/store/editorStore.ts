@@ -56,6 +56,7 @@ interface EditorActions {
   setHoveredWordIndex: (index: number | null) => void;
   deleteSelectedWords: () => void;
   muteSelectedWords: () => void;
+  bleepSelectedWords: () => void;
   replaceSelectedWordsWithRoomTone: () => void;
   hideSelectedWordsFromCaptions: () => void;
   deleteWordRange: (startIndex: number, endIndex: number) => void;
@@ -69,7 +70,7 @@ interface EditorActions {
   setTranscribing: (active: boolean, progress?: number) => void;
   setExporting: (active: boolean, progress?: number) => void;
   getKeepSegments: () => Array<{ start: number; end: number }>;
-  getMutedRanges: () => Array<{ start: number; end: number; kind: 'mute' | 'room-tone' }>;
+  getMutedRanges: () => Array<{ start: number; end: number; kind: 'mute' | 'bleep' | 'room-tone' }>;
   getCaptionHiddenIndices: () => number[];
   getWordAtTime: (time: number) => number;
   loadProject: (projectData: ProjectData) => void;
@@ -140,7 +141,7 @@ const initialState: EditorState = {
   transcriptionProgress: 0,
   isExporting: false,
   exportProgress: 0,
-  backendUrl: 'http://localhost:8642',
+  backendUrl: 'http://127.0.0.1:8642',
 };
 
 let nextRangeId = 1;
@@ -246,6 +247,11 @@ export const useEditorStore = create<EditorState & EditorActions>()(
       muteSelectedWords: () => {
         const { selectedWordIndices, addEditOperation } = get();
         addEditOperation('mute', selectedWordIndices);
+      },
+
+      bleepSelectedWords: () => {
+        const { selectedWordIndices, addEditOperation } = get();
+        addEditOperation('bleep', selectedWordIndices);
       },
 
       replaceSelectedWordsWithRoomTone: () => {
@@ -504,11 +510,16 @@ export const useEditorStore = create<EditorState & EditorActions>()(
 
       getMutedRanges: () =>
         get()
-          .editOperations.filter((operation) => operation.kind === 'mute' || operation.kind === 'room-tone')
+          .editOperations.filter(
+            (operation) =>
+              operation.kind === 'mute' ||
+              operation.kind === 'bleep' ||
+              operation.kind === 'room-tone',
+          )
           .map((operation) => ({
             start: operation.start,
             end: operation.end,
-            kind: operation.kind as 'mute' | 'room-tone',
+            kind: operation.kind as 'mute' | 'bleep' | 'room-tone',
           })),
 
       getCaptionHiddenIndices: () => {

@@ -227,6 +227,17 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertIn("ass=filename='", filter_complex)
         self.assertNotIn("ass='/", filter_complex)
 
+    def test_bleep_audio_layer_mutes_source_and_adds_tone(self) -> None:
+        filter_graph = video_editor._build_audio_trim_filter(
+            0,
+            {"start": 10.0, "end": 14.0},
+            [{"start": 11.0, "end": 11.8, "kind": "bleep"}],
+        )
+
+        self.assertIn("volume=0:enable='between(t,1.000,1.800)'", filter_graph)
+        self.assertIn("sine=frequency=1000", filter_graph)
+        self.assertIn("amix=inputs=2", filter_graph)
+
     def test_captions_hide_deleted_words(self) -> None:
         srt = generate_srt(
             [
@@ -292,9 +303,46 @@ class BackendSmokeTests(unittest.TestCase):
     def test_transcription_engine_status_includes_parakeet(self) -> None:
         transcription = self._load_transcription_service_or_skip()
         status = transcription.get_transcription_engine_status()
+        self.assertIn("faster-whisper", status["engines"])
+        self.assertTrue(status["engines"]["faster-whisper"]["first_class"])
         self.assertIn("parakeet", status["engines"])
         self.assertTrue(status["engines"]["parakeet"]["first_class"])
         self.assertEqual(status["engines"]["parakeet"]["default_model"], transcription.PARAKEET_DEFAULT_MODEL)
+
+    def test_faster_whisper_normalizes_word_timestamps(self) -> None:
+        transcription = self._load_transcription_service_or_skip()
+
+        class FakeWord:
+            word = " привет "
+            start = 0.25
+            end = 0.75
+            probability = 0.93
+
+        class FakeSegment:
+            start = 0.2
+            end = 0.8
+            text = " Привет "
+            words = [FakeWord()]
+
+        class FakeInfo:
+            language = "ru"
+
+        class FakeModel:
+            def transcribe(self, audio_path, **options):
+                self.audio_path = audio_path
+                self.options = options
+                return iter([FakeSegment()]), FakeInfo()
+
+        model = FakeModel()
+        result = transcription._transcribe_faster_whisper(model, "sample.wav", "ru")
+
+        self.assertEqual(result["language"], "ru")
+        self.assertEqual(
+            result["words"],
+            [{"word": "привет", "start": 0.25, "end": 0.75, "confidence": 0.93}],
+        )
+        self.assertTrue(model.options["word_timestamps"])
+        self.assertTrue(model.options["vad_filter"])
 
     def test_system_checks_payload_covers_onboarding_requirements(self) -> None:
         import asyncio
@@ -491,6 +539,100 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(suggestion["startTime"], 0.0)
         self.assertEqual(suggestion["endTime"], 0.2)
         self.assertEqual(suggestion["text"], "Well")
+
+    def test_topic_edit_plan_chunks_refines_and_returns_reviewable_complement(self) -> None:
+        words = [
+            {
+                "index": index,
+                "word": word,
+                "start": index * 0.5,
+                "end": (index + 1) * 0.5,
+            }
+            for index, word in enumerate(
+                "вступление ни о чем сегодня обсуждаем оптимизацию беременности "
+                "важная мысль и вывод потом сменили тему про игры".split()
+            )
+        ]
+        responses = [
+            """
+            {
+              "relevantRanges": [
+                {
+                  "startWordIndex": 3,
+                  "endWordIndex": 9,
+                  "reason": "Разговор об оптимизации беременности",
+                  "confidence": 0.94
+                }
+              ]
+            }
+            """,
+            """
+            {
+              "startWordIndex": 4,
+              "endWordIndex": 9,
+              "reason": "Законченная мысль по теме",
+              "confidence": 0.96
+            }
+            """,
+        ]
+        progress_updates = []
+
+        with patch.object(ai_provider.AIProvider, "complete", side_effect=responses) as complete:
+            result = ai_provider.create_topic_edit_plan(
+                instruction="оставь всё про оптимизацию беременности",
+                words=words,
+                context_padding=0,
+                progress_callback=lambda percent, message: progress_updates.append((percent, message)),
+            )
+
+        self.assertEqual(complete.call_count, 2)
+        self.assertEqual(len(result["selectedSegments"]), 1)
+        selected = result["selectedSegments"][0]
+        self.assertEqual(selected["startWordIndex"], 4)
+        self.assertEqual(selected["endWordIndex"], 9)
+        self.assertEqual(
+            [(item["startWordIndex"], item["endWordIndex"]) for item in result["suggestions"]],
+            [(0, 3), (10, len(words) - 1)],
+        )
+        self.assertEqual(result["metrics"]["chunkCount"], 1)
+        self.assertEqual(progress_updates[-1][0], 100)
+
+    def test_topic_edit_plan_never_deletes_everything_when_no_match_is_found(self) -> None:
+        words = [
+            {"index": 0, "word": "другая", "start": 0.0, "end": 0.4},
+            {"index": 1, "word": "тема", "start": 0.4, "end": 0.8},
+        ]
+
+        with patch.object(
+            ai_provider.AIProvider,
+            "complete",
+            return_value='{"relevantRanges": []}',
+        ):
+            result = ai_provider.create_topic_edit_plan(
+                instruction="беременность",
+                words=words,
+            )
+
+        self.assertEqual(result["selectedSegments"], [])
+        self.assertEqual(result["suggestions"], [])
+
+    def test_xai_provider_uses_official_openai_compatible_endpoint(self) -> None:
+        with patch.object(
+            ai_provider,
+            "_openai_compatible_complete",
+            return_value="ok",
+        ) as complete:
+            result = ai_provider.AIProvider.complete(
+                prompt="test",
+                provider="xai",
+                api_key="xai-key",
+            )
+
+        self.assertEqual(result, "ok")
+        args = complete.call_args.args
+        self.assertEqual(args[1], "grok-4.5")
+        self.assertEqual(args[3], "https://api.x.ai/v1")
+        self.assertEqual(args[6], "xAI")
 
     def test_clip_request_includes_shorts_platform_guidance(self) -> None:
         captured: dict[str, str] = {}

@@ -156,7 +156,7 @@ export function getPreviewAudioLayer(
 
   const active = editOperations.find(
     (operation) =>
-      (operation.kind === 'mute' || operation.kind === 'room-tone') &&
+      (operation.kind === 'mute' || operation.kind === 'bleep' || operation.kind === 'room-tone') &&
       time >= operation.start &&
       time < operation.end,
   );

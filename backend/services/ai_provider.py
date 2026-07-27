@@ -1,10 +1,10 @@
 """
-Unified AI provider interface for Ollama, OpenAI, Claude, and 9router.
+Unified AI provider interface and transcript-aware editing helpers.
 """
 
 import json
 import logging
-from typing import Optional, List
+from typing import Callable, Optional, List
 
 import requests
 
@@ -30,6 +30,16 @@ class AIProvider:
             return _openai_complete(prompt, model or "gpt-4o", api_key or "", system_prompt, temperature)
         elif provider == "claude":
             return _claude_complete(prompt, model or "claude-sonnet-4-20250514", api_key or "", system_prompt, temperature)
+        elif provider == "xai":
+            return _openai_compatible_complete(
+                prompt,
+                model or "grok-4.5",
+                api_key or "",
+                base_url or "https://api.x.ai/v1",
+                system_prompt,
+                temperature,
+                "xAI",
+            )
         elif provider == "9router":
             return _nine_router_complete(
                 prompt,
@@ -599,6 +609,443 @@ Rules:
         logger.error(f"Failed to parse edit plan: {result_text[:200]}")
 
     return {"summary": "No safe edit suggestions were found.", "suggestions": []}
+
+
+def create_topic_edit_plan(
+    instruction: str,
+    words: List[dict],
+    provider: str = "ollama",
+    model: Optional[str] = None,
+    api_key: Optional[str] = None,
+    base_url: Optional[str] = None,
+    context_padding: float = 0.45,
+    progress_callback: Optional[Callable[[int, str], None]] = None,
+) -> dict:
+    """
+    Find every passage related to a topic without sending a full VOD in one request.
+
+    The first pass searches compact, overlapping transcript chunks. A second pass
+    shows the model only the words around each candidate's boundaries so cuts can
+    land on complete thoughts. The returned delete suggestions are the complement
+    of the selected passages and remain unapplied until the UI approves them.
+    """
+    normalized_words = _normalize_topic_words(words)
+    if not normalized_words or not instruction.strip():
+        return {
+            "summary": "Нечего анализировать: нужна расшифровка и описание темы.",
+            "suggestions": [],
+            "selectedSegments": [],
+            "metrics": {
+                "sourceDuration": 0,
+                "selectedDuration": 0,
+                "chunkCount": 0,
+            },
+        }
+
+    chunks = _chunk_topic_words(normalized_words)
+    coarse_ranges: List[dict] = []
+    total_steps = max(1, len(chunks))
+
+    for chunk_index, chunk in enumerate(chunks):
+        _emit_topic_progress(
+            progress_callback,
+            8 + round((chunk_index / total_steps) * 52),
+            f"Анализ блока {chunk_index + 1} из {len(chunks)}",
+        )
+        result_text = AIProvider.complete(
+            prompt=_build_topic_search_prompt(instruction, chunk),
+            provider=provider,
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+            system_prompt=(
+                "Ты редактор разговорных видео. Ищи все фрагменты по теме, "
+                "не выдумывай совпадения и возвращай только валидный JSON."
+            ),
+            temperature=0.1,
+        )
+        parsed = _parse_json_object(result_text)
+        coarse_ranges.extend(
+            _normalize_topic_ranges(
+                parsed.get("relevantRanges", []) if parsed else [],
+                normalized_words,
+                chunk[0]["index"],
+                chunk[-1]["index"],
+            )
+        )
+
+    coarse_ranges = _merge_topic_ranges(coarse_ranges, normalized_words, max_gap_seconds=2.0)
+    if not coarse_ranges:
+        _emit_topic_progress(progress_callback, 100, "Совпадений по теме не найдено")
+        return {
+            "summary": "ИИ не нашёл уверенных фрагментов по заданной теме. Монтаж не изменён.",
+            "suggestions": [],
+            "selectedSegments": [],
+            "metrics": {
+                "sourceDuration": _source_duration(normalized_words),
+                "selectedDuration": 0,
+                "chunkCount": len(chunks),
+            },
+        }
+
+    refined_ranges: List[dict] = []
+    refine_total = len(coarse_ranges)
+    for range_index, candidate in enumerate(coarse_ranges):
+        _emit_topic_progress(
+            progress_callback,
+            62 + round((range_index / max(1, refine_total)) * 25),
+            f"Уточнение границ {range_index + 1} из {refine_total}",
+        )
+        result_text = AIProvider.complete(
+            prompt=_build_topic_refinement_prompt(instruction, candidate, normalized_words),
+            provider=provider,
+            model=model,
+            api_key=api_key,
+            base_url=base_url,
+            system_prompt=(
+                "Ты аккуратный монтажёр. Выбери границы законченной мысли по доступным "
+                "индексам слов и верни только валидный JSON."
+            ),
+            temperature=0.1,
+        )
+        parsed = _parse_json_object(result_text)
+        refined = _normalize_refined_topic_range(parsed, candidate, normalized_words)
+        refined_ranges.append(refined)
+
+    padded_ranges = [
+        _pad_topic_range(candidate, normalized_words, max(0.0, min(3.0, context_padding)))
+        for candidate in refined_ranges
+    ]
+    selected_ranges = _merge_topic_ranges(padded_ranges, normalized_words, max_gap_seconds=1.0)
+    suggestions = _topic_delete_suggestions(selected_ranges, normalized_words)
+    selected_segments = _topic_selected_segments(selected_ranges, normalized_words)
+    selected_duration = sum(item["endTime"] - item["startTime"] for item in selected_segments)
+    _emit_topic_progress(progress_callback, 100, "Тематическая подборка готова к проверке")
+
+    return {
+        "summary": (
+            f"Найдено фрагментов по теме: {len(selected_segments)}. "
+            f"В подборке {round(selected_duration)} сек.; "
+            f"к ручной проверке предложено удалений: {len(suggestions)}."
+        ),
+        "suggestions": suggestions,
+        "selectedSegments": selected_segments,
+        "metrics": {
+            "sourceDuration": _source_duration(normalized_words),
+            "selectedDuration": round(selected_duration, 3),
+            "chunkCount": len(chunks),
+        },
+    }
+
+
+def _normalize_topic_words(words: List[dict]) -> List[dict]:
+    normalized = []
+    for position, word in enumerate(words):
+        try:
+            index = int(word.get("index", position))
+            start = float(word.get("start"))
+            end = float(word.get("end"))
+        except (AttributeError, TypeError, ValueError):
+            continue
+        text = str(word.get("word") or "").strip()
+        if not text or end < start:
+            continue
+        normalized.append({"index": index, "word": text, "start": start, "end": end})
+    return sorted(normalized, key=lambda item: item["index"])
+
+
+def _chunk_topic_words(
+    words: List[dict],
+    max_words: int = 1200,
+    max_seconds: float = 600.0,
+    overlap_words: int = 60,
+) -> List[List[dict]]:
+    chunks: List[List[dict]] = []
+    start = 0
+    while start < len(words):
+        end = start
+        chunk_start_time = words[start]["start"]
+        while end < len(words):
+            too_many_words = end - start >= max_words
+            too_long = words[end]["end"] - chunk_start_time > max_seconds
+            if end > start and (too_many_words or too_long):
+                break
+            end += 1
+        chunks.append(words[start:end])
+        if end >= len(words):
+            break
+        start = max(start + 1, end - overlap_words)
+    return chunks
+
+
+def _build_topic_search_prompt(instruction: str, words: List[dict]) -> str:
+    cue_lines = []
+    cue_size = 18
+    for offset in range(0, len(words), cue_size):
+        cue = words[offset:offset + cue_size]
+        cue_lines.append(
+            f"{cue[0]['index']}-{cue[-1]['index']} "
+            f"[{cue[0]['start']:.1f}-{cue[-1]['end']:.1f}] "
+            + " ".join(word["word"] for word in cue)
+        )
+
+    return f"""Найди ВСЕ участки расшифровки, которые прямо относятся к запросу автора.
+
+Запрос автора:
+{instruction.strip()}
+
+Учитывай синонимы, перефразирование и необходимый контекст. Не включай случайные
+упоминания без содержательного разговора по теме. Лучше вернуть несколько отдельных
+фрагментов, чем один огромный диапазон с посторонним разговором.
+
+Строки расшифровки имеют формат: startIndex-endIndex [секунды] текст.
+{chr(10).join(cue_lines)}
+
+Верни только JSON:
+{{
+  "relevantRanges": [
+    {{
+      "startWordIndex": integer,
+      "endWordIndex": integer,
+      "reason": "почему фрагмент относится к запросу",
+      "confidence": number from 0 to 1
+    }}
+  ]
+}}
+
+Индексы должны существовать в расшифровке. Если совпадений нет, верни пустой массив."""
+
+
+def _build_topic_refinement_prompt(instruction: str, candidate: dict, words: List[dict]) -> str:
+    position_by_index = {word["index"]: position for position, word in enumerate(words)}
+    start_position = position_by_index[candidate["startWordIndex"]]
+    end_position = position_by_index[candidate["endWordIndex"]]
+    edge_radius = 55
+    head = words[max(0, start_position - edge_radius):min(len(words), start_position + edge_radius + 1)]
+    tail = words[max(0, end_position - edge_radius):min(len(words), end_position + edge_radius + 1)]
+
+    edge_words = []
+    seen = set()
+    for word in [*head, *tail]:
+        if word["index"] in seen:
+            continue
+        seen.add(word["index"])
+        edge_words.append(
+            f"{word['index']} [{word['start']:.2f}-{word['end']:.2f}] {word['word']}"
+        )
+
+    return f"""Уточни границы найденного тематического фрагмента.
+
+Запрос автора:
+{instruction.strip()}
+
+Предварительные границы: {candidate['startWordIndex']}-{candidate['endWordIndex']}
+Причина: {candidate.get('reason', '')}
+
+Слова вокруг начала и конца:
+{chr(10).join(edge_words)}
+
+Выбери startWordIndex так, чтобы фрагмент начинался с понятной законченной мысли,
+и endWordIndex так, чтобы не обрывать предложение. Не расширяй фрагмент на соседнюю тему.
+Можно оставить предварительную границу, даже если её индекс не попал в список краевых слов.
+
+Верни только JSON:
+{{
+  "startWordIndex": integer,
+  "endWordIndex": integer,
+  "reason": "краткое описание содержания",
+  "confidence": number from 0 to 1
+}}"""
+
+
+def _parse_json_object(text: str) -> Optional[dict]:
+    if not text:
+        return None
+    start = text.find("{")
+    end = text.rfind("}") + 1
+    if start < 0 or end <= start:
+        return None
+    try:
+        parsed = json.loads(text[start:end])
+    except json.JSONDecodeError:
+        logger.error("Failed to parse topic response as JSON: %s", text[:300])
+        return None
+    return parsed if isinstance(parsed, dict) else None
+
+
+def _normalize_topic_ranges(
+    raw_ranges: object,
+    words: List[dict],
+    min_index: int,
+    max_index: int,
+) -> List[dict]:
+    if not isinstance(raw_ranges, list):
+        return []
+    valid_indices = {word["index"] for word in words}
+    ranges = []
+    for item in raw_ranges:
+        if not isinstance(item, dict):
+            continue
+        try:
+            start_index = int(item.get("startWordIndex"))
+            end_index = int(item.get("endWordIndex"))
+        except (TypeError, ValueError):
+            continue
+        if end_index < start_index:
+            start_index, end_index = end_index, start_index
+        if (
+            start_index < min_index
+            or end_index > max_index
+            or start_index not in valid_indices
+            or end_index not in valid_indices
+        ):
+            continue
+        ranges.append({
+            "startWordIndex": start_index,
+            "endWordIndex": end_index,
+            "reason": str(item.get("reason") or "Связано с заданной темой").strip()[:240],
+            "confidence": _coerce_confidence(item.get("confidence"), ""),
+        })
+    return ranges
+
+
+def _normalize_refined_topic_range(
+    parsed: Optional[dict],
+    fallback: dict,
+    words: List[dict],
+) -> dict:
+    if not parsed:
+        return fallback
+    normalized = _normalize_topic_ranges(
+        [parsed],
+        words,
+        words[0]["index"],
+        words[-1]["index"],
+    )
+    if not normalized:
+        return fallback
+
+    candidate = normalized[0]
+    # A refinement may adjust an edge, but it may not jump to an unrelated part.
+    max_shift = 120
+    if (
+        abs(candidate["startWordIndex"] - fallback["startWordIndex"]) > max_shift
+        or abs(candidate["endWordIndex"] - fallback["endWordIndex"]) > max_shift
+    ):
+        return fallback
+    return candidate
+
+
+def _merge_topic_ranges(ranges: List[dict], words: List[dict], max_gap_seconds: float) -> List[dict]:
+    if not ranges:
+        return []
+    word_by_index = {word["index"]: word for word in words}
+    ordered = sorted(ranges, key=lambda item: (item["startWordIndex"], item["endWordIndex"]))
+    merged: List[dict] = []
+    for candidate in ordered:
+        if candidate["startWordIndex"] not in word_by_index or candidate["endWordIndex"] not in word_by_index:
+            continue
+        if not merged:
+            merged.append(dict(candidate))
+            continue
+        previous = merged[-1]
+        gap = (
+            word_by_index[candidate["startWordIndex"]]["start"]
+            - word_by_index[previous["endWordIndex"]]["end"]
+        )
+        if candidate["startWordIndex"] <= previous["endWordIndex"] + 1 or gap <= max_gap_seconds:
+            previous["endWordIndex"] = max(previous["endWordIndex"], candidate["endWordIndex"])
+            previous["confidence"] = max(previous.get("confidence", 0), candidate.get("confidence", 0))
+            if candidate.get("reason") and candidate["reason"] not in previous.get("reason", ""):
+                previous["reason"] = f"{previous.get('reason', '')}; {candidate['reason']}".strip("; ")[:240]
+        else:
+            merged.append(dict(candidate))
+    return merged
+
+
+def _pad_topic_range(candidate: dict, words: List[dict], padding: float) -> dict:
+    if padding <= 0:
+        return candidate
+    position_by_index = {word["index"]: position for position, word in enumerate(words)}
+    start_position = position_by_index[candidate["startWordIndex"]]
+    end_position = position_by_index[candidate["endWordIndex"]]
+    start_time = words[start_position]["start"] - padding
+    end_time = words[end_position]["end"] + padding
+    while start_position > 0 and words[start_position - 1]["end"] >= start_time:
+        start_position -= 1
+    while end_position + 1 < len(words) and words[end_position + 1]["start"] <= end_time:
+        end_position += 1
+    padded = dict(candidate)
+    padded["startWordIndex"] = words[start_position]["index"]
+    padded["endWordIndex"] = words[end_position]["index"]
+    return padded
+
+
+def _topic_delete_suggestions(selected: List[dict], words: List[dict]) -> List[dict]:
+    if not selected:
+        return []
+    ranges = []
+    cursor_position = 0
+    position_by_index = {word["index"]: position for position, word in enumerate(words)}
+
+    for selected_range in selected:
+        start_position = position_by_index[selected_range["startWordIndex"]]
+        if start_position > cursor_position:
+            ranges.append((cursor_position, start_position - 1))
+        cursor_position = max(cursor_position, position_by_index[selected_range["endWordIndex"]] + 1)
+    if cursor_position < len(words):
+        ranges.append((cursor_position, len(words) - 1))
+
+    suggestions = []
+    for suggestion_index, (start_position, end_position) in enumerate(ranges):
+        start_word = words[start_position]
+        end_word = words[end_position]
+        suggestions.append({
+            "id": f"topic_cut_{suggestion_index}_{start_word['index']}_{end_word['index']}",
+            "action": "delete",
+            "startWordIndex": start_word["index"],
+            "endWordIndex": end_word["index"],
+            "startTime": start_word["start"],
+            "endTime": end_word["end"],
+            "text": " ".join(word["word"] for word in words[start_position:end_position + 1])[:800],
+            "reason": "Фрагмент не относится к выбранной теме.",
+            "confidence": 0.78,
+        })
+    return suggestions
+
+
+def _topic_selected_segments(selected: List[dict], words: List[dict]) -> List[dict]:
+    position_by_index = {word["index"]: position for position, word in enumerate(words)}
+    segments = []
+    for segment_index, candidate in enumerate(selected):
+        start_position = position_by_index[candidate["startWordIndex"]]
+        end_position = position_by_index[candidate["endWordIndex"]]
+        segments.append({
+            "id": f"topic_keep_{segment_index}_{candidate['startWordIndex']}_{candidate['endWordIndex']}",
+            "startWordIndex": candidate["startWordIndex"],
+            "endWordIndex": candidate["endWordIndex"],
+            "startTime": words[start_position]["start"],
+            "endTime": words[end_position]["end"],
+            "text": " ".join(word["word"] for word in words[start_position:end_position + 1])[:800],
+            "reason": candidate.get("reason") or "Связано с выбранной темой.",
+            "confidence": candidate.get("confidence", 0.75),
+        })
+    return segments
+
+
+def _source_duration(words: List[dict]) -> float:
+    if not words:
+        return 0
+    return round(max(0.0, words[-1]["end"] - words[0]["start"]), 3)
+
+
+def _emit_topic_progress(
+    progress_callback: Optional[Callable[[int, str], None]],
+    percent: int,
+    message: str,
+) -> None:
+    if progress_callback:
+        progress_callback(max(0, min(100, percent)), message)
 
 
 def _normalize_edit_plan_result(parsed: object, words: List[dict]) -> dict:

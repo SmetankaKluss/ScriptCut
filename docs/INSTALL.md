@@ -10,7 +10,7 @@ For non-technical use, install the desktop app from the latest GitHub Release:
 2. Download the **macOS Apple Silicon (arm64)** `.dmg`.
 3. Open ScriptCut and follow the first-run setup assistant.
 
-The desktop alpha includes portable FFmpeg and FFprobe for export. It still uses a compatible local Python 3.10-3.12 runtime and ScriptCut backend dependency set for editing, so the first-run assistant may ask you to install Python once. Use the [First Export Guide](./FIRST_EXPORT.md) for the shortest path, or install Python from [python.org for macOS](https://www.python.org/downloads/macos/).
+The desktop alpha includes portable FFmpeg/FFprobe and a standalone backend. No separate Python installation is needed for the packaged app. Use the [First Export Guide](./FIRST_EXPORT.md) for the shortest path.
 
 Read [Platform Support](./PLATFORM_SUPPORT.md) before downloading. If a DMG is not attached yet, use the source setup below.
 
@@ -81,4 +81,10 @@ Release maintainers can create and verify a portable FFmpeg/FFprobe bundle in `b
 
 ```bash
 npm run release:ffmpeg
+```
+
+Prepare the standalone backend runtime before packaging:
+
+```bash
+npm run release:backend
 ```

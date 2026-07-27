@@ -3,7 +3,7 @@ import { useEditorStore } from '../store/editorStore';
 import { useAIStore } from '../store/aiStore';
 import { Virtuoso } from 'react-virtuoso';
 import type { VirtuosoHandle } from 'react-virtuoso';
-import { CaptionsOff, ChevronLeft, ChevronRight, Copy, Film, Pencil, Play, RotateCcw, Search, Trash2, UserRoundCheck, VolumeX, Waves, X } from 'lucide-react';
+import { BellRing, CaptionsOff, ChevronLeft, ChevronRight, Copy, Film, Pencil, Play, RotateCcw, Search, Trash2, UserRoundCheck, VolumeX, Waves, X } from 'lucide-react';
 import type { ClipDraft } from '../types/project';
 import { adjustWordSelectionBoundary, formatSelectionDuration, summarizeWordSelection } from '../utils/transcriptSelection';
 import { findTranscriptMatches } from '../utils/transcriptSearch';
@@ -21,6 +21,7 @@ export default function TranscriptEditor() {
   const setHoveredWordIndex = useEditorStore((s) => s.setHoveredWordIndex);
   const deleteSelectedWords = useEditorStore((s) => s.deleteSelectedWords);
   const muteSelectedWords = useEditorStore((s) => s.muteSelectedWords);
+  const bleepSelectedWords = useEditorStore((s) => s.bleepSelectedWords);
   const replaceSelectedWordsWithRoomTone = useEditorStore((s) => s.replaceSelectedWordsWithRoomTone);
   const hideSelectedWordsFromCaptions = useEditorStore((s) => s.hideSelectedWordsFromCaptions);
   const addEditOperation = useEditorStore((s) => s.addEditOperation);
@@ -348,6 +349,7 @@ export default function TranscriptEditor() {
               const deletedRange = isDeleted ? getRangeForWord(globalIndex) : null;
               const operation = operationMap.get(globalIndex);
               const isMuted = operation?.kind === 'mute';
+              const isBleep = operation?.kind === 'bleep';
               const isRoomTone = operation?.kind === 'room-tone';
               const isCaptionHidden = operation?.kind === 'caption-only';
               const searchMatchIndex = searchMatchWordMap.get(globalIndex);
@@ -366,13 +368,14 @@ export default function TranscriptEditor() {
                     relative px-[2px] py-[1px] rounded cursor-pointer transition-colors
                     ${isDeleted ? 'line-through text-editor-text-muted/40 bg-editor-word-deleted' : ''}
                     ${isMuted && !isDeleted ? 'bg-editor-accent/10 text-editor-accent' : ''}
-                    ${isRoomTone && !isDeleted && !isMuted ? 'bg-editor-warning/10 text-editor-warning' : ''}
-                    ${isCaptionHidden && !isDeleted && !isMuted && !isRoomTone ? 'bg-editor-border/70 text-editor-text-muted' : ''}
+                    ${isBleep && !isDeleted && !isMuted ? 'bg-pink-500/15 text-pink-300' : ''}
+                    ${isRoomTone && !isDeleted && !isMuted && !isBleep ? 'bg-editor-warning/10 text-editor-warning' : ''}
+                    ${isCaptionHidden && !isDeleted && !isMuted && !isBleep && !isRoomTone ? 'bg-editor-border/70 text-editor-text-muted' : ''}
                     ${isSelected && !isDeleted ? 'bg-editor-word-selected text-white' : ''}
                     ${isActive && !isDeleted && !isSelected ? 'bg-editor-accent/20 text-editor-accent' : ''}
                     ${isActiveSearchMatch && !isDeleted && !isSelected ? 'bg-editor-success/30 text-editor-success' : ''}
                     ${isSearchMatch && !isActiveSearchMatch && !isDeleted && !isSelected && !isActive ? 'bg-editor-warning/10 text-editor-warning' : ''}
-                    ${isHovered && !isDeleted && !isSelected && !isActive && !isMuted && !isRoomTone && !isCaptionHidden ? 'bg-editor-word-hover' : ''}
+                    ${isHovered && !isDeleted && !isSelected && !isActive && !isMuted && !isBleep && !isRoomTone && !isCaptionHidden ? 'bg-editor-word-hover' : ''}
                   `}
                 >
                   {word.word}{' '}
@@ -396,7 +399,7 @@ export default function TranscriptEditor() {
                       className="absolute -top-5 left-1/2 -translate-x-1/2 flex items-center gap-0.5 px-1.5 py-0.5 bg-editor-surface border border-editor-border rounded text-[10px] text-editor-success whitespace-nowrap z-10"
                     >
                       <RotateCcw className="w-2.5 h-2.5" />
-                      Restore {operation.kind === 'mute' ? 'mute' : operation.kind === 'caption-only' ? 'caption' : operation.kind === 'room-tone' ? 'room tone' : 'speaker'}
+                      Restore {operation.kind === 'mute' ? 'mute' : operation.kind === 'bleep' ? 'bleep' : operation.kind === 'caption-only' ? 'caption' : operation.kind === 'room-tone' ? 'room tone' : 'speaker'}
                     </button>
                   )}
                 </span>
@@ -607,6 +610,12 @@ export default function TranscriptEditor() {
               className="flex items-center gap-1 rounded bg-editor-accent/20 px-2 py-1 text-[10px] text-editor-accent hover:bg-editor-accent/30"
             >
               <VolumeX className="h-3 w-3" /> Mute
+            </button>
+            <button
+              onClick={bleepSelectedWords}
+              className="flex items-center gap-1 rounded bg-pink-500/15 px-2 py-1 text-[10px] text-pink-300 hover:bg-pink-500/25"
+            >
+              <BellRing className="h-3 w-3" /> Bleep
             </button>
             <button
               onClick={replaceSelectedWordsWithRoomTone}

@@ -72,7 +72,7 @@ Prepare a local alpha release package:
 npm run release:alpha
 ```
 
-That command runs release trust checks, prepares a portable FFmpeg/FFprobe bundle, runs desktop package QA, builds the macOS DMG, writes `dist/release-alpha/SHA256SUMS.txt`, writes `dist/release-alpha/release-manifest.json`, and writes `dist/release-alpha/RELEASE_NOTES.md`.
+That command runs release trust checks, prepares portable FFmpeg/FFprobe and the standalone backend runtime, runs desktop package QA, builds the macOS DMG, writes `dist/release-alpha/SHA256SUMS.txt`, writes `dist/release-alpha/release-manifest.json`, and writes `dist/release-alpha/RELEASE_NOTES.md`.
 
 By default the package is prepared for `v0.1.0-alpha`. For follow-up alpha builds under the same app version, pass a more specific tag:
 
@@ -180,7 +180,7 @@ Supported notarization inputs:
 ## Notes
 
 - Python 3.11 is the recommended runtime for local development.
-- Current desktop alphas bundle FFmpeg/FFprobe but still use a compatible local Python runtime and backend dependency set. State this clearly in every release description until the backend runtime is bundled.
+- Current desktop alphas bundle FFmpeg/FFprobe and the standalone backend runtime. Python 3.11 remains the recommended runtime for source development and maintainer builds.
 - `npm run release:ffmpeg` verifies that FFmpeg/FFprobe execute from the release bundle and packages non-system macOS dylibs. Do not manually copy host FFmpeg executables into a release.
 - The bundle manifest records whether the selected FFmpeg supports ASS burn-in captions. Releases without that filter use the tested sidecar `.srt` fallback and must state that in their notes.
 - Parakeet TDT v3 requires optional NVIDIA NeMo ASR dependencies.

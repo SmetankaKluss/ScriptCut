@@ -1,0 +1,3 @@
+# Optional local background removal
+mediapipe>=0.10.14
+opencv-python>=4.10.0

@@ -57,7 +57,7 @@
         "required": ["id", "kind", "start", "end", "wordIndices"],
         "properties": {
           "id": { "type": "string" },
-          "kind": { "type": "string", "enum": ["delete", "mute", "caption-only", "speaker-label", "room-tone"] },
+          "kind": { "type": "string", "enum": ["delete", "mute", "bleep", "caption-only", "speaker-label", "room-tone"] },
           "start": { "type": "number" },
           "end": { "type": "number" },
           "wordIndices": { "type": "array", "items": { "type": "integer" } },
@@ -85,6 +85,9 @@
       "type": "object",
       "properties": {
         "customFillerWords": { "type": "string" },
+        "customCensorWords": { "type": "string" },
+        "censorMode": { "type": "string", "enum": ["bleep", "mute", "room-tone"] },
+        "includeBuiltInProfanity": { "type": "boolean" },
         "fillerResult": {
           "type": ["object", "null"],
           "properties": {
@@ -119,6 +122,18 @@
             "suggestions": {
               "type": "array",
               "items": { "$ref": "#/definitions/editPlanSuggestion" }
+            },
+            "selectedSegments": {
+              "type": "array",
+              "items": { "$ref": "#/definitions/topicSelectionSegment" }
+            },
+            "metrics": {
+              "type": "object",
+              "properties": {
+                "sourceDuration": { "type": "number" },
+                "selectedDuration": { "type": "number" },
+                "chunkCount": { "type": "integer" }
+              }
             }
           }
         },
@@ -187,6 +202,20 @@
       "properties": {
         "id": { "type": "string" },
         "action": { "type": "string", "enum": ["delete"] },
+        "startWordIndex": { "type": "integer" },
+        "endWordIndex": { "type": "integer" },
+        "startTime": { "type": "number" },
+        "endTime": { "type": "number" },
+        "text": { "type": "string" },
+        "reason": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "topicSelectionSegment": {
+      "type": "object",
+      "required": ["id", "startWordIndex", "endWordIndex", "startTime", "endTime", "text", "reason"],
+      "properties": {
+        "id": { "type": "string" },
         "startWordIndex": { "type": "integer" },
         "endWordIndex": { "type": "integer" },
         "startTime": { "type": "number" },

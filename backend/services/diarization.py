@@ -8,23 +8,28 @@ import os
 from pathlib import Path
 from typing import Optional
 
-import torch
-
-from utils.gpu_utils import get_optimal_device
-
 logger = logging.getLogger(__name__)
 
 _pipeline_cache = {}
 
 
-def _get_pipeline(hf_token: str, device: torch.device):
+def _get_pipeline(hf_token: str, use_gpu: bool):
+    try:
+        import torch
+        from pyannote.audio import Pipeline
+        from utils.gpu_utils import get_optimal_device
+    except ImportError:
+        logger.warning(
+            "Speaker diarization is unavailable. Install PyTorch and pyannote.audio to enable it."
+        )
+        return None
+
+    device = get_optimal_device() if use_gpu else torch.device("cpu")
     cache_key = str(device)
     if cache_key in _pipeline_cache:
         return _pipeline_cache[cache_key]
 
     try:
-        from pyannote.audio import Pipeline
-
         pipeline = Pipeline.from_pretrained(
             "pyannote/speaker-diarization-3.0",
             use_auth_token=hf_token,
@@ -57,8 +62,7 @@ def diarize_and_label(
         logger.warning("No HuggingFace token provided; skipping diarization")
         return transcription_result
 
-    device = get_optimal_device() if use_gpu else torch.device("cpu")
-    pipeline = _get_pipeline(hf_token, device)
+    pipeline = _get_pipeline(hf_token, use_gpu)
     if pipeline is None:
         return transcription_result
 
