@@ -15,7 +15,6 @@ faster-whisper>=1.0.0
 # pip install -U nemo_toolkit['asr']
 
 # Audio / Video processing
-moviepy>=1.0.3
 ffmpeg-python>=0.2.0
 soundfile>=0.10.3
 

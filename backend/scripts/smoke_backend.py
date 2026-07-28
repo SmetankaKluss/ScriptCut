@@ -5,9 +5,11 @@ from __future__ import annotations
 import time
 import unittest
 import subprocess
+from array import array
 from pathlib import Path
 import sys
 from tempfile import TemporaryDirectory
+from types import SimpleNamespace
 from unittest.mock import patch
 
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
@@ -21,6 +23,7 @@ from local_api_auth import is_authorized_local_api_request
 from services import video_editor
 from services import ai_provider
 from services import transcription
+from services import waveform
 from services.caption_generator import generate_srt
 from services.job_manager import JobManager
 
@@ -85,6 +88,100 @@ class BackendSmokeTests(unittest.TestCase):
                 self.assertEqual(model_factory.call_args_list[1].kwargs["compute_type"], "int8")
         finally:
             transcription._model_cache.clear()
+
+    def test_faster_whisper_uses_supported_cuda_compute_type(self) -> None:
+        transcription._model_cache.clear()
+        fake_model = object()
+        fake_ctranslate2 = SimpleNamespace(
+            get_supported_compute_types=lambda device: {"int8_float32", "float32"},
+        )
+        try:
+            with (
+                patch.dict(sys.modules, {"ctranslate2": fake_ctranslate2}),
+                patch.object(transcription, "FASTER_WHISPER_AVAILABLE", True),
+                patch.object(transcription, "WhisperModel", return_value=fake_model) as model_factory,
+            ):
+                self.assertIs(
+                    transcription._load_model("base", "cuda", "faster-whisper"),
+                    fake_model,
+                )
+                self.assertEqual(model_factory.call_args.kwargs["device"], "cuda")
+                self.assertEqual(model_factory.call_args.kwargs["compute_type"], "int8_float32")
+        finally:
+            transcription._model_cache.clear()
+
+    def test_faster_whisper_inference_float16_failure_retries_original_video_on_cpu(self) -> None:
+        class FailingGpuModel:
+            def transcribe(self, _audio_path, **_options):
+                raise RuntimeError(
+                    "Requested float16 compute type, but the target device or backend "
+                    "do not support efficient float16 computation."
+                )
+
+        seen_paths: list[str] = []
+
+        class WorkingCpuModel:
+            def transcribe(self, audio_path, **_options):
+                seen_paths.append(audio_path)
+                segment = SimpleNamespace(
+                    start=0,
+                    end=1,
+                    text="hello",
+                    words=[
+                        SimpleNamespace(
+                            word="hello",
+                            start=0,
+                            end=1,
+                            probability=0.9,
+                        )
+                    ],
+                )
+                return iter([segment]), SimpleNamespace(language="en")
+
+        with TemporaryDirectory() as tmp:
+            video_path = Path(tmp) / "long-stream.mp4"
+            video_path.write_bytes(b"placeholder")
+            with (
+                patch.object(transcription, "FASTER_WHISPER_AVAILABLE", True),
+                patch.object(transcription, "_get_device", return_value="cuda"),
+                patch.object(
+                    transcription,
+                    "_load_model",
+                    side_effect=[FailingGpuModel(), WorkingCpuModel()],
+                ) as load_model,
+            ):
+                result = transcription.transcribe_audio(
+                    str(video_path),
+                    engine="faster-whisper",
+                    use_cache=False,
+                )
+
+        self.assertEqual(result["words"][0]["word"], "hello")
+        self.assertEqual(seen_paths, [str(video_path)])
+        self.assertEqual(load_model.call_args_list[1].args, ("base", "cpu", "faster-whisper"))
+
+    def test_waveform_reduces_media_to_bounded_peak_count(self) -> None:
+        pcm = array("h", [-32768, -12000, 0, 8000, 32767, -4000, 2000, 0]).tobytes()
+        completed = subprocess.CompletedProcess(
+            ["ffmpeg"],
+            0,
+            stdout=pcm,
+            stderr=b"",
+        )
+        with TemporaryDirectory() as tmp:
+            media_path = Path(tmp) / "stream.mp4"
+            media_path.write_bytes(b"placeholder")
+            with (
+                patch.object(waveform, "_probe_duration", return_value=4 * 60 * 60),
+                patch.object(waveform, "find_ffmpeg", return_value="ffmpeg"),
+                patch.object(waveform.subprocess, "run", return_value=completed) as run,
+            ):
+                result = waveform.generate_waveform(str(media_path), points=4000)
+
+        self.assertEqual(result["sample_rate"], 8)
+        self.assertEqual(result["points"], 8)
+        self.assertEqual(result["peaks"][0], [-1.0, -1.0])
+        self.assertIn("pipe:1", run.call_args.args[0])
 
     def test_packaged_backend_requires_local_api_token(self) -> None:
         self.assertTrue(is_authorized_local_api_request("", None))

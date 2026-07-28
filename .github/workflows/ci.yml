@@ -88,6 +88,9 @@ jobs:
       - name: Test playback sync workflow
         run: npm run test:playback-sync --prefix frontend
 
+      - name: Test long-media waveform workflow
+        run: npm run test:waveform --prefix frontend
+
       - name: Test censorship workflow
         run: npm run test:censorship --prefix frontend
 

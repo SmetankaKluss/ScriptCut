@@ -84,14 +84,18 @@ def _load_model(model_name: str, device: str, engine: TranscriptionEngine):
         model = _load_parakeet_model(model_name, device)
     elif engine == "faster-whisper" and FASTER_WHISPER_AVAILABLE:
         faster_device = "cuda" if device.startswith("cuda") else "cpu"
-        compute_type = "float16" if faster_device == "cuda" else "int8"
+        compute_type = _select_faster_whisper_compute_type(faster_device)
         try:
             model = WhisperModel(model_name, device=faster_device, compute_type=compute_type)
-        except RuntimeError as error:
+        except (RuntimeError, ValueError) as error:
             if faster_device != "cuda":
                 raise
             logger.warning("CUDA Faster Whisper initialization failed; falling back to CPU: %s", error)
-            model = WhisperModel(model_name, device="cpu", compute_type="int8")
+            model = WhisperModel(
+                model_name,
+                device="cpu",
+                compute_type=_select_faster_whisper_compute_type("cpu"),
+            )
     elif engine == "whisperx" and WHISPERX_AVAILABLE:
         whisperx_device = "cuda" if device.startswith("cuda") else "cpu"
         compute_type = "float16" if whisperx_device == "cuda" else "int8"
@@ -109,6 +113,45 @@ def _load_model(model_name: str, device: str, engine: TranscriptionEngine):
 
     _model_cache[cache_key] = model
     return model
+
+
+def _select_faster_whisper_compute_type(device: str) -> str:
+    """Choose a compute type that CTranslate2 reports as usable on this device."""
+    priorities = (
+        ("float16", "int8_float16", "int8_float32", "int8", "float32")
+        if device == "cuda"
+        else ("int8", "int8_float32", "float32")
+    )
+    try:
+        import ctranslate2
+
+        supported = ctranslate2.get_supported_compute_types(device)
+        for compute_type in priorities:
+            if compute_type in supported:
+                return compute_type
+        logger.warning(
+            "CTranslate2 reported no preferred Faster Whisper compute type for %s: %s",
+            device,
+            sorted(supported),
+        )
+    except (ImportError, RuntimeError, ValueError) as error:
+        logger.warning("Could not inspect CTranslate2 %s compute types: %s", device, error)
+    return "float16" if device == "cuda" else "int8"
+
+
+def _is_faster_whisper_acceleration_error(error: Exception) -> bool:
+    message = str(error).lower()
+    return any(
+        marker in message
+        for marker in (
+            "float16 compute type",
+            "cuda",
+            "cudnn",
+            "cublas",
+            "compute type",
+            "out of memory",
+        )
+    )
 
 
 def _resolve_engine(engine: TranscriptionEngine) -> TranscriptionEngine:
@@ -234,29 +277,44 @@ def transcribe_audio(
             return cached
 
     video_extensions = {".mp4", ".avi", ".mov", ".mkv", ".webm"}
-    if file_path.suffix.lower() in video_extensions:
-        # MoviePy is only needed for video inputs. Keeping this import lazy lets
-        # lightweight health checks and CI exercise transcription contracts
-        # without loading the entire media stack at module import time.
+    audio_path = file_path
+    temporary_audio_path = None
+    if resolved_engine == "parakeet" and file_path.suffix.lower() in video_extensions:
         from utils.audio_processing import extract_audio
 
-        audio_path = extract_audio(file_path)
-    else:
-        audio_path = file_path
+        temporary_audio_path = extract_audio(file_path)
+        audio_path = temporary_audio_path
 
     device = _get_device(use_gpu)
-    model = _load_model(model_name, device, resolved_engine)
+    try:
+        model = _load_model(model_name, device, resolved_engine)
 
-    logger.info(f"Transcribing with {resolved_engine}: {file_path}")
+        logger.info(f"Transcribing with {resolved_engine}: {file_path}")
 
-    if resolved_engine == "parakeet":
-        result = _transcribe_parakeet(model, str(audio_path))
-    elif resolved_engine == "faster-whisper":
-        result = _transcribe_faster_whisper(model, str(audio_path), language)
-    elif resolved_engine == "whisperx":
-        result = _transcribe_whisperx(model, str(audio_path), device, language)
-    else:
-        result = _transcribe_standard(model, str(audio_path), language)
+        if resolved_engine == "parakeet":
+            result = _transcribe_parakeet(model, str(audio_path))
+        elif resolved_engine == "faster-whisper":
+            try:
+                result = _transcribe_faster_whisper(model, str(audio_path), language)
+            except (RuntimeError, ValueError) as error:
+                if not device.startswith("cuda") or not _is_faster_whisper_acceleration_error(error):
+                    raise
+                logger.warning(
+                    "CUDA Faster Whisper inference failed; retrying safely on CPU: %s",
+                    error,
+                )
+                _model_cache.pop(f"{resolved_engine}_{model_name}_{device}", None)
+                cpu_model = _load_model(model_name, "cpu", resolved_engine)
+                result = _transcribe_faster_whisper(cpu_model, str(audio_path), language)
+        elif resolved_engine == "whisperx":
+            result = _transcribe_whisperx(model, str(audio_path), device, language)
+        else:
+            result = _transcribe_standard(model, str(audio_path), language)
+    finally:
+        if temporary_audio_path is not None:
+            from utils.audio_processing import cleanup_temp_audio_file
+
+            cleanup_temp_audio_file(temporary_audio_path)
 
     result["engine"] = resolved_engine
     result["model"] = model_name

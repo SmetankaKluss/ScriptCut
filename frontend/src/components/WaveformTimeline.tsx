@@ -10,11 +10,12 @@ export default function WaveformTimeline() {
   const [audioError, setAudioError] = useState<string | null>(null);
   const [zoom, setZoom] = useState(1);
   const [waveformRevision, setWaveformRevision] = useState(0);
+  const [waveformLoading, setWaveformLoading] = useState(false);
   const [followPlayhead, setFollowPlayhead] = useState(true);
 
-  const videoUrl = useEditorStore((s) => s.videoUrl);
   const videoPath = useEditorStore((s) => s.videoPath);
   const duration = useEditorStore((s) => s.duration);
+  const backendUrl = useEditorStore((s) => s.backendUrl);
   const words = useEditorStore((s) => s.words);
   const deletedRanges = useEditorStore((s) => s.deletedRanges);
   const editOperations = useEditorStore((s) => s.editOperations);
@@ -24,8 +25,8 @@ export default function WaveformTimeline() {
   const requestSeek = useEditorStore((s) => s.requestSeek);
   const setSelectedWordIndices = useEditorStore((s) => s.setSelectedWordIndices);
 
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const audioBufferRef = useRef<AudioBuffer | null>(null);
+  const waveformPeaksRef = useRef<Array<[number, number]>>([]);
+  const waveformDurationRef = useRef(0);
   const rafRef = useRef(0);
   const currentTimeRef = useRef(0);
   const dragStartTimeRef = useRef<number | null>(null);
@@ -39,8 +40,8 @@ export default function WaveformTimeline() {
 
   const drawStaticWaveform = useCallback(() => {
     const canvas = waveCanvasRef.current;
-    const buffer = audioBufferRef.current;
-    const timelineDuration = buffer?.duration || duration;
+    const peaks = waveformPeaksRef.current;
+    const timelineDuration = waveformDurationRef.current || duration;
     if (!canvas || timelineDuration <= 0) return;
 
     const ctx = canvas.getContext('2d');
@@ -54,9 +55,6 @@ export default function WaveformTimeline() {
 
     const width = rect.width;
     const height = rect.height;
-    const channelData = buffer?.getChannelData(0);
-    const samplesPerPixel = channelData ? Math.max(1, Math.floor(channelData.length / width)) : 0;
-
     ctx.clearRect(0, 0, width, height);
 
     for (const range of deletedRanges) {
@@ -100,7 +98,7 @@ export default function WaveformTimeline() {
     ctx.strokeStyle = '#4a4d5e';
     ctx.lineWidth = 1;
 
-    if (!channelData) {
+    if (peaks.length === 0) {
       ctx.moveTo(0, mid);
       ctx.lineTo(width, mid);
       ctx.stroke();
@@ -117,19 +115,11 @@ export default function WaveformTimeline() {
       return;
     }
 
-    for (let x = 0; x < width; x++) {
-      const start = x * samplesPerPixel;
-      const end = Math.min(start + samplesPerPixel, channelData.length);
-
-      let min = 0;
-      let max = 0;
-      for (let i = start; i < end; i++) {
-        if (channelData[i] < min) min = channelData[i];
-        if (channelData[i] > max) max = channelData[i];
-      }
-
-      const yMin = mid + min * mid * 0.9;
-      const yMax = mid + max * mid * 0.9;
+    for (let index = 0; index < peaks.length; index++) {
+      const x = peaks.length === 1 ? 0 : (index / (peaks.length - 1)) * width;
+      const [minimum, maximum] = peaks[index];
+      const yMin = mid + minimum * mid * 0.9;
+      const yMax = mid + maximum * mid * 0.9;
       ctx.moveTo(x, yMin);
       ctx.lineTo(x, yMax);
     }
@@ -137,33 +127,52 @@ export default function WaveformTimeline() {
   }, [deletedRanges, duration, editOperations, selectedWordIndices, words]);
 
   useEffect(() => {
-    if (!videoUrl || !videoPath) return;
+    if (!videoPath) return;
     let canceled = false;
     const controller = new AbortController();
 
     setAudioError(null);
-    audioBufferRef.current = null;
+    setWaveformLoading(true);
+    waveformPeaksRef.current = [];
+    waveformDurationRef.current = 0;
     setWaveformRevision((revision) => revision + 1);
 
     const loadAudio = async () => {
       try {
-        await audioContextRef.current?.close();
-        const ctx = new AudioContext();
-        audioContextRef.current = ctx;
-
-        const response = await fetch(videoUrl, { signal: controller.signal });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const arrayBuffer = await response.arrayBuffer();
-        const audioBuffer = await ctx.decodeAudioData(arrayBuffer);
+        const query = new URLSearchParams({
+          file_path: videoPath,
+          points: '6000',
+        });
+        const response = await fetch(`${backendUrl}/audio/waveform?${query.toString()}`, {
+          signal: controller.signal,
+        });
+        if (!response.ok) {
+          let detail = response.statusText;
+          try {
+            const body = await response.json();
+            detail = body.detail || detail;
+          } catch {
+            // Keep the HTTP status text for non-JSON failures.
+          }
+          throw new Error(detail);
+        }
+        const waveform = (await response.json()) as {
+          duration: number;
+          peaks: Array<[number, number]>;
+        };
         if (canceled) return;
-        audioBufferRef.current = audioBuffer;
+        waveformPeaksRef.current = Array.isArray(waveform.peaks) ? waveform.peaks : [];
+        waveformDurationRef.current = Number.isFinite(waveform.duration) ? waveform.duration : 0;
         setWaveformRevision((revision) => revision + 1);
       } catch (err) {
         if (canceled || (err instanceof DOMException && err.name === 'AbortError')) return;
-        console.warn('Could not decode audio for waveform:', err);
-        audioBufferRef.current = null;
-        setAudioError('Waveform unavailable — audio could not be decoded');
+        console.warn('Could not build waveform:', err);
+        waveformPeaksRef.current = [];
+        waveformDurationRef.current = 0;
+        setAudioError('Waveform unavailable — editing and transcription still work');
         setWaveformRevision((revision) => revision + 1);
+      } finally {
+        if (!canceled) setWaveformLoading(false);
       }
     };
 
@@ -172,10 +181,8 @@ export default function WaveformTimeline() {
     return () => {
       canceled = true;
       controller.abort();
-      void audioContextRef.current?.close();
-      audioContextRef.current = null;
     };
-  }, [videoUrl, videoPath]);
+  }, [backendUrl, videoPath]);
 
   // Redraw static layer when deletedRanges change
   useEffect(() => {
@@ -197,7 +204,7 @@ export default function WaveformTimeline() {
       const ctx = headCanvas.getContext('2d');
       if (!ctx) { rafRef.current = requestAnimationFrame(tick); return; }
 
-      const dur = audioBufferRef.current?.duration || duration;
+      const dur = waveformDurationRef.current || duration;
 
       const dpr = window.devicePixelRatio || 1;
       const rect = headCanvas.getBoundingClientRect();
@@ -226,7 +233,7 @@ export default function WaveformTimeline() {
 
     rafRef.current = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(rafRef.current);
-  }, [videoUrl, duration]);
+  }, [videoPath, duration]);
 
   useEffect(() => {
     const observer = new ResizeObserver(() => {
@@ -327,7 +334,7 @@ export default function WaveformTimeline() {
     [currentTime, deletedRanges, previewCuts, requestSeek, selectWordsForTimeRange, timeFromPointer],
   );
 
-  if (!videoUrl) {
+  if (!videoPath) {
     return (
       <div className="w-full h-full flex items-center justify-center text-editor-text-muted text-xs">
         Load a video to see the waveform
@@ -394,6 +401,11 @@ export default function WaveformTimeline() {
           <div className="pointer-events-none absolute inset-x-3 top-2 flex items-center gap-1.5 rounded bg-editor-bg/80 px-2 py-1 text-[10px] text-editor-text-muted">
             <AlertTriangle className="w-3.5 h-3.5 text-yellow-500" />
             <span>{audioError}</span>
+          </div>
+        )}
+        {waveformLoading && !audioError && (
+          <div className="pointer-events-none absolute inset-x-3 top-2 rounded bg-editor-bg/80 px-2 py-1 text-[10px] text-editor-text-muted">
+            Building a memory-safe waveform…
           </div>
         )}
       </div>

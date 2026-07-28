@@ -46,9 +46,6 @@ const hiddenImports = [
   'uvicorn.lifespan.on',
 ];
 const metadataPackages = [
-  'imageio',
-  'imageio-ffmpeg',
-  'moviepy',
   'faster-whisper',
   'huggingface-hub',
   'tokenizers',
@@ -97,16 +94,5 @@ if (!fs.existsSync(executable)) {
   throw new Error(`Packaged backend executable was not created: ${executable}`);
 }
 if (!isWindows) fs.chmodSync(executable, 0o755);
-
-// Electron always points MoviePy/ImageIO at ScriptCut's verified platform
-// FFmpeg. Keeping ImageIO's second bundled binary wastes ~45-50 MB per app.
-const imageioBundledFfmpeg = path.join(
-  distDir,
-  'scriptcut-backend',
-  '_internal',
-  'imageio_ffmpeg',
-  'binaries',
-);
-fs.rmSync(imageioBundledFfmpeg, { recursive: true, force: true });
 
 console.log(`Standalone backend ready: ${path.relative(root, executable)}`);

@@ -32,8 +32,8 @@ assert(bridge.includes("spawn('taskkill'"), 'Electron must terminate the Windows
 assert(bridge.includes('120000'), 'Packaged backend must allow for first-launch antivirus scanning');
 assert(bridge.includes("windowsHide: process.platform === 'win32'"), 'Windows backend must not open a console window');
 assert(
-  read('electron/bundled-tools.js').includes('IMAGEIO_FFMPEG_EXE'),
-  'MoviePy must reuse ScriptCut bundled FFmpeg instead of shipping another copy',
+  read('electron/bundled-tools.js').includes('SCRIPTCUT_FFMPEG_PATH'),
+  'The standalone backend must receive ScriptCut bundled FFmpeg',
 );
 
 const main = read('electron/main.js');

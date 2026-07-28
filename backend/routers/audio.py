@@ -1,12 +1,14 @@
 """Audio processing endpoint (noise reduction / Studio Sound)."""
 
 import logging
+from pathlib import Path
 from typing import Optional
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from services.audio_cleaner import clean_audio, is_deepfilter_available
+from services.waveform import generate_waveform
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -36,3 +38,15 @@ async def audio_capabilities():
     return {
         "deepfilternet_available": is_deepfilter_available(),
     }
+
+
+@router.get("/audio/waveform")
+def audio_waveform(file_path: str, points: int = Query(default=4000, ge=256, le=10000)):
+    """Return compact waveform peaks without loading the source media in the UI."""
+    try:
+        return generate_waveform(file_path, points)
+    except FileNotFoundError:
+        raise HTTPException(status_code=404, detail=f"File not found: {Path(file_path).name}")
+    except Exception as error:
+        logger.error("Waveform extraction failed: %s", error)
+        raise HTTPException(status_code=422, detail=str(error))

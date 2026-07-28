@@ -46,6 +46,26 @@ npm run release:ffmpeg:windows
 
 This path rejects unverified downloads and requires ASS subtitle support.
 
+## Faster Whisper Reports an Unsupported float16 Compute Type
+
+Update to ScriptCut 0.1.1 or newer. It checks which CTranslate2 modes the GPU
+actually supports and automatically retries transcription on CPU when a CUDA
+driver or GPU cannot run float16 efficiently.
+
+The fallback is safe but can be slower than GPU transcription. The source video
+is not modified.
+
+## Waveform Is Unavailable for a Long Stream
+
+Update to ScriptCut 0.1.1 or newer. Earlier builds downloaded the complete media
+file into the interface and asked the browser audio decoder to hold it in
+memory. Current builds generate a compact waveform through bundled FFmpeg, so
+multi-hour streams do not require multi-gigabyte browser buffers.
+
+If the waveform still cannot be generated because the file has no decodable
+audio track, editing and transcription remain available. Open the job log if
+transcription itself also fails.
+
 ## Backend Will Not Start
 
 Run:

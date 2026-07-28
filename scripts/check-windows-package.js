@@ -229,7 +229,6 @@ async function main() {
       SCRIPTCUT_API_TOKEN: token,
       SCRIPTCUT_FFMPEG_PATH: ffmpeg,
       SCRIPTCUT_FFPROBE_PATH: ffprobe,
-      IMAGEIO_FFMPEG_EXE: ffmpeg,
       PATH: `${ffmpegDir}${path.delimiter}${process.env.PATH || ''}`,
       PYTHONUNBUFFERED: '1',
     },
@@ -248,6 +247,14 @@ async function main() {
     if (!checks?.checks?.ffmpeg?.ok) fail('packaged backend cannot execute bundled FFmpeg');
     if (!checks?.checks?.transcription?.ok) fail('packaged backend cannot load faster-whisper');
     if (!checks?.checks?.captions?.ok) fail('packaged Windows FFmpeg cannot burn captions');
+
+    const waveform = await request(
+      'GET',
+      `/audio/waveform?file_path=${encodeURIComponent(input)}&points=1000`,
+    );
+    if (!waveform?.points || !Array.isArray(waveform.peaks) || waveform.peaks.length !== waveform.points) {
+      fail(`packaged backend returned an invalid waveform: ${JSON.stringify(waveform)}`);
+    }
 
     const started = await request('POST', '/jobs/export', {
       input_path: input,

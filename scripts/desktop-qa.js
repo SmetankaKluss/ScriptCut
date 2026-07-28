@@ -64,6 +64,7 @@ const steps = [
   ['Hook frame smoke tests', 'npm', ['run', 'test:hook-frames', '--prefix', 'frontend']],
   ['Support report smoke tests', 'npm', ['run', 'test:support-report', '--prefix', 'frontend']],
   ['Playback sync smoke tests', 'npm', ['run', 'test:playback-sync', '--prefix', 'frontend']],
+  ['Long-media waveform smoke tests', 'npm', ['run', 'test:waveform', '--prefix', 'frontend']],
   ['Censorship smoke tests', 'npm', ['run', 'test:censorship', '--prefix', 'frontend']],
   ['Desktop packaging smoke tests', 'npm', ['run', 'test:packaging']],
 ];
