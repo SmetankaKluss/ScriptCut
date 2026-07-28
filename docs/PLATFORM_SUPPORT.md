@@ -6,7 +6,7 @@ This page describes the current ScriptCut alpha support boundary. It is intentio
 | --- | --- | --- | --- |
 | macOS Apple Silicon (arm64) | Verified alpha path | GitHub Release DMG | Portable FFmpeg/FFprobe and the standalone backend are bundled and verified inside the packaged app. |
 | macOS Intel (x64) | Preparation supported, release not yet published | Source / maintainer build | Build and validate on a native Intel Mac with a matching x64 FFmpeg bundle before publishing an Intel DMG. |
-| Windows 10/11 x64 | Verified alpha path | [NSIS installer + portable `.exe`](https://github.com/SmetankaKluss/ScriptCut/releases/tag/windows-alpha-v0.1.0) | Standalone backend and checksum-verified static FFmpeg are bundled. A native Windows runner completed a real captioned/bleep export and launched the packaged app before publication. |
+| Windows 10/11 x64 | Verified alpha path | [NSIS installer + portable `.exe`](https://github.com/SmetankaKluss/ScriptCut/releases/tag/windows-alpha-v0.1.1) | Standalone backend and checksum-verified static FFmpeg are bundled. A native Windows runner completed a real captioned/bleep export, generated a packaged waveform, and launched the packaged app before publication. |
 | Linux | Source development only | No public installer | Do not treat the current AppImage config as a supported release until packaging, FFmpeg, and export have been verified on Linux. |
 | Browser at `localhost:5173` | Development and testing only | Local dev server | Browser mode can upload media and download exports, but it does not provide the desktop app's native file access or autosave workflow. |
 

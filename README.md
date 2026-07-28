@@ -47,7 +47,7 @@ If no release asset is available yet, ScriptCut can still be run from source usi
 
 The current downloadable alpha is verified for **macOS Apple Silicon (arm64)**
 and **Windows 10/11 x64**. Download the Windows installer or portable build
-from the [verified Windows alpha release](https://github.com/SmetankaKluss/ScriptCut/releases/tag/windows-alpha-v0.1.0).
+from the [verified Windows alpha release](https://github.com/SmetankaKluss/ScriptCut/releases/tag/windows-alpha-v0.1.1).
 The native release lane blocks publication unless the packaged app completes a
 real captioned/bleep export and launches successfully. Both platforms bundle
 FFmpeg/FFprobe and a standalone backend, so friends do not need to install

@@ -121,10 +121,11 @@ The same path is available through the `package_windows` workflow-dispatch
 input. CI uploads `.exe` files only after native verification succeeds.
 
 To promote an already verified Actions artifact, dispatch
-`publish-windows-alpha.yml` with its successful CI run ID and the intended
-prerelease tag. The workflow revalidates `SHA256SUMS.txt`, normalizes the public
-asset names, regenerates the matching public manifest/checksum file, and only
-then uploads the release assets.
+`publish-windows-alpha.yml` with its successful CI run ID. The workflow derives
+the version and default prerelease tag from `package.json`; an explicit tag is
+optional. It revalidates `SHA256SUMS.txt`, normalizes the public asset names,
+regenerates the matching public manifest/checksum file, and only then uploads
+the release assets.
 
 ## GitHub Release Draft
 

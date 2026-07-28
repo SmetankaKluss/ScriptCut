@@ -21,15 +21,20 @@ Python, Node.js и отдельный FFmpeg друзьям устанавлив
 ## Скачать проверенную alpha-сборку
 
 Текущий Windows 10/11 x64 prerelease:
-[ScriptCut 0.1.0 Windows alpha](https://github.com/SmetankaKluss/ScriptCut/releases/tag/windows-alpha-v0.1.0).
+[ScriptCut 0.1.1 Windows alpha](https://github.com/SmetankaKluss/ScriptCut/releases/tag/windows-alpha-v0.1.1).
 
-- `ScriptCut-Setup-0.1.0-x64.exe` — установщик, 260 880 334 байта,
-  SHA-256 `d7a194bbcb532f0267f6a7489cdc9721b7b2eb0b2b9f6b73671147240954b057`;
-- `ScriptCut-0.1.0-portable-x64.exe` — portable, 260 665 729 байт,
-  SHA-256 `02acfe0b4da7353f5b917666501a7b453b2f321c39d578127b45f307d0e364a8`.
+- `ScriptCut-Setup-0.1.1-x64.exe` — установщик, 253 212 520 байт,
+  SHA-256 `60e9a0c2889ad4e641c554eea55ae700825f742405d751dd889a4657339d5bb8`;
+- `ScriptCut-0.1.1-portable-x64.exe` — portable, 252 997 916 байт,
+  SHA-256 `7699d0ad2cac3c49ced31b60c2daedbddc92bef5ffef7e860447be82a838f566`.
 
 Рядом с `.exe` опубликованы `SHA256SUMS-windows-x64.txt` и
 `release-manifest-windows-x64.json`.
+
+Версия 0.1.1 исправляет ошибку `Requested float16 compute type` на
+несовместимых GPU и строит waveform длинного стрима через FFmpeg, не загружая
+весь видеофайл в память интерфейса. Whisper читает MP4 напрямую и больше не
+создаёт многогигабайтный временный WAV.
 
 ## Первая установка
 
@@ -60,10 +65,10 @@ Workflow `.github/workflows/ci.yml` использует настоящий
 9. чтение результата встроенным `ffprobe.exe`;
 10. запуск самого `ScriptCut.exe` и его защищённого локального backend.
 
-Сборка `windows-alpha-v0.1.0` прошла все эти шаги в нативном
-[CI run 30275216207](https://github.com/SmetankaKluss/ScriptCut/actions/runs/30275216207).
-Promotion workflow повторно проверил SHA-256 перед публикацией файлов в
-GitHub Release.
+Сборка `windows-alpha-v0.1.1` прошла все эти шаги в нативном
+[CI run 30336680566](https://github.com/SmetankaKluss/ScriptCut/actions/runs/30336680566).
+[Promotion workflow](https://github.com/SmetankaKluss/ScriptCut/actions/runs/30337024041)
+повторно проверил SHA-256 перед публикацией файлов в GitHub Release.
 
 ## Локальная сборка на Windows 10/11 x64
 
