@@ -21,20 +21,23 @@ Python, Node.js и отдельный FFmpeg друзьям устанавлив
 ## Скачать проверенную alpha-сборку
 
 Текущий Windows 10/11 x64 prerelease:
-[ScriptCut 0.1.1 Windows alpha](https://github.com/SmetankaKluss/ScriptCut/releases/tag/windows-alpha-v0.1.1).
+[ScriptCut 0.1.2 Windows alpha](https://github.com/SmetankaKluss/ScriptCut/releases/tag/windows-alpha-v0.1.2).
 
-- `ScriptCut-Setup-0.1.1-x64.exe` — установщик, 253 212 520 байт,
-  SHA-256 `60e9a0c2889ad4e641c554eea55ae700825f742405d751dd889a4657339d5bb8`;
-- `ScriptCut-0.1.1-portable-x64.exe` — portable, 252 997 916 байт,
-  SHA-256 `7699d0ad2cac3c49ced31b60c2daedbddc92bef5ffef7e860447be82a838f566`.
+- `ScriptCut-Setup-0.1.2-x64.exe` — установщик, 253 249 715 байт,
+  SHA-256 `57ecdcd63c11f6d00dbca6ba4e01cbd70f9d3aebc7c2878e4b62c34b34acc14b`;
+- `ScriptCut-0.1.2-portable-x64.exe` — portable, 253 035 112 байт,
+  SHA-256 `f6400ae98a89e05321c331dbb498d50de2c543bd8b898e9e50a68f5c577d3345`.
 
 Рядом с `.exe` опубликованы `SHA256SUMS-windows-x64.txt` и
 `release-manifest-windows-x64.json`.
 
-Версия 0.1.1 исправляет ошибку `Requested float16 compute type` на
-несовместимых GPU и строит waveform длинного стрима через FFmpeg, не загружая
-весь видеофайл в память интерфейса. Whisper читает MP4 напрямую и больше не
-создаёт многогигабайтный временный WAV.
+Версия 0.1.2 сохраняет исправления GPU и длинных waveform из 0.1.1, а также:
+
+- явно показывает, какой AI-провайдер используется в редакторе;
+- проверяет ключ и выбранную модель OpenAI/xAI без отправки расшифровки;
+- понятно объясняет отклонённый ключ, права модели и отдельный API-биллинг;
+- отключает WhisperX/Parakeet/legacy Whisper, если их нет в desktop-сборке;
+- объясняет, что модели Faster Whisper скачиваются автоматически.
 
 ## Первая установка
 
@@ -65,9 +68,9 @@ Workflow `.github/workflows/ci.yml` использует настоящий
 9. чтение результата встроенным `ffprobe.exe`;
 10. запуск самого `ScriptCut.exe` и его защищённого локального backend.
 
-Сборка `windows-alpha-v0.1.1` прошла все эти шаги в нативном
-[CI run 30336680566](https://github.com/SmetankaKluss/ScriptCut/actions/runs/30336680566).
-[Promotion workflow](https://github.com/SmetankaKluss/ScriptCut/actions/runs/30337024041)
+Сборка `windows-alpha-v0.1.2` прошла все эти шаги в нативном
+[CI run 30458139668](https://github.com/SmetankaKluss/ScriptCut/actions/runs/30458139668).
+[Promotion workflow](https://github.com/SmetankaKluss/ScriptCut/actions/runs/30458644821)
 повторно проверил SHA-256 перед публикацией файлов в GitHub Release.
 
 ## Локальная сборка на Windows 10/11 x64
