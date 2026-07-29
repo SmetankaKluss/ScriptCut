@@ -21,9 +21,8 @@ const cacheDir = path.join(root, '.cache', 'windows-ffmpeg');
 const configuredReleaseBase = process.env.SCRIPTCUT_WINDOWS_FFMPEG_RELEASE || '';
 const target = process.arch === 'arm64' ? 'winarm64' : 'win64';
 const defaultAsset = `ffmpeg-n8.1-latest-${target}-gpl-8.1.zip`;
-const assetName = process.env.SCRIPTCUT_WINDOWS_FFMPEG_ASSET || defaultAsset;
-const archivePath = path.join(cacheDir, assetName);
-const extractDir = path.join(cacheDir, path.basename(assetName, '.zip'));
+const configuredAssetName = process.env.SCRIPTCUT_WINDOWS_FFMPEG_ASSET || '';
+let assetName = configuredAssetName || defaultAsset;
 const releaseResolveAttempts = Number(process.env.SCRIPTCUT_FFMPEG_RELEASE_ATTEMPTS || 6);
 
 function fail(message) {
@@ -57,7 +56,25 @@ async function resolveRelease() {
   const release = await (await response(
     'https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/latest',
   )).json();
-  const archive = release?.assets?.find((asset) => asset.name === assetName);
+  let archive = release?.assets?.find((asset) => asset.name === assetName);
+  if (!archive && !configuredAssetName) {
+    const versionedAssetPattern = new RegExp(
+      `^ffmpeg-n8\\.1(?:\\.\\d+)?(?:-\\d+-g[0-9a-f]+)?-${target}-gpl-8\\.1\\.zip$`,
+      'i',
+    );
+    const versionedAssets = (release?.assets || []).filter((asset) =>
+      versionedAssetPattern.test(asset.name || ''),
+    );
+    if (versionedAssets.length === 1) {
+      archive = versionedAssets[0];
+      assetName = archive.name;
+    } else if (versionedAssets.length > 1) {
+      fail(
+        `GitHub release contains multiple matching FFmpeg 8.1 assets for ${target}: ` +
+        versionedAssets.map((asset) => asset.name).join(', '),
+      );
+    }
+  }
   const checksums = release?.assets?.find((asset) => asset.name === 'checksums.sha256');
   if (!archive?.url || !checksums?.url) fail(`GitHub release does not contain ${assetName} and checksums.sha256`);
   return {
@@ -157,6 +174,8 @@ async function main() {
 
   fs.mkdirSync(cacheDir, { recursive: true });
   const { release, expected } = await resolveReleaseAndChecksum();
+  const archivePath = path.join(cacheDir, assetName);
+  const extractDir = path.join(cacheDir, path.basename(assetName, '.zip'));
 
   if (!fs.existsSync(archivePath) || sha256(archivePath) !== expected) {
     await download(release.archiveUrl, archivePath, release.downloadHeaders);
