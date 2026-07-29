@@ -6,9 +6,9 @@ python-multipart>=0.0.12
 
 # Transcription with word-level timestamps
 faster-whisper>=1.0.0
-# WhisperX already provides the default transcription path. The legacy
-# openai-whisper fallback is optional because its source distribution currently
-# fails in pip's isolated build environment on otherwise supported systems.
+# Faster Whisper is the bundled/default desktop path. WhisperX and the legacy
+# openai-whisper fallback are optional because their dependency stacks currently
+# fail in pip's isolated build environment on otherwise supported systems.
 # Install it manually with:
 # pip install "setuptools<81" wheel && pip install --no-build-isolation openai-whisper
 # Optional Parakeet TDT v3 engine support uses NVIDIA NeMo:

@@ -77,6 +77,13 @@ class ModelListRequest(BaseModel):
     api_key: Optional[str] = None
 
 
+class ProviderCheckRequest(BaseModel):
+    provider: str
+    api_key: Optional[str] = None
+    model: Optional[str] = None
+    base_url: Optional[str] = None
+
+
 @router.post("/ai/filler-removal")
 async def filler_removal(req: FillerRequest):
     try:
@@ -217,3 +224,13 @@ async def ollama_status(base_url: str = "http://localhost:11434"):
 async def nine_router_models(req: ModelListRequest):
     models = AIProvider.list_9router_models(req.base_url or "http://localhost:20128/v1", req.api_key)
     return {"models": models}
+
+
+@router.post("/ai/provider-check")
+async def provider_check(req: ProviderCheckRequest):
+    return AIProvider.check_cloud_provider(
+        provider=req.provider,
+        api_key=req.api_key,
+        model=req.model,
+        base_url=req.base_url,
+    )

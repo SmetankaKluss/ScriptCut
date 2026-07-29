@@ -96,6 +96,39 @@ ollama list
 
 Cloud providers require valid API keys. ScriptCut keeps provider settings local.
 
+### Grok/OpenAI says the API key is incorrect
+
+Update to ScriptCut 0.1.2 or newer, then:
+
+1. Open **More → Settings**.
+2. Select the provider that should be used by AI Editor.
+3. Enter its API key and model.
+4. Click **Test connection**.
+
+Only the selected provider is used. Saving both an OpenAI key and an xAI key
+does not send the same request to both providers.
+
+The connection test reads the models available to the key. It does not send
+transcript text and does not use completion tokens. If xAI reports an incorrect
+key, the request reached xAI but was rejected before model processing, so it may
+not appear as billable usage. xAI keys also need access to the Models and Chat
+endpoints and to the selected model.
+
+A ChatGPT Plus/Pro subscription and OpenAI API billing are separate. Create an
+API key in the OpenAI API platform and make sure the API account has billing or
+credits available.
+
+### WhisperX or another transcription engine does not download
+
+Update to ScriptCut 0.1.2 or newer. The desktop build includes Faster Whisper
+and disables optional engines that are not installed. WhisperX is a separate
+program dependency; downloading a `medium` model by itself cannot install it.
+
+For the normal Windows build choose **Faster Whisper** and then `base`, `small`,
+or `medium`. The selected speech model downloads automatically on the first
+transcription, so no manual model installation is required. The first run can
+remain on the model-loading message while the download finishes.
+
 ## Background Removal Is Disabled
 
 Background removal requires optional Python packages such as MediaPipe and OpenCV. Check availability in the export panel or by running:

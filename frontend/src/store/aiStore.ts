@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import type { AIProvider, AIProviderConfig, CensorMode, FillerWordResult, ClipSuggestion, ClipDraft, ProjectAIWorkspace, FillerReviewDecision, EditPlanResult, EditPlanReviewDecision } from '../types/project';
+import type { AIProvider, AIProviderConfig, AIProviderConnectionCheck, CensorMode, FillerWordResult, ClipSuggestion, ClipDraft, ProjectAIWorkspace, FillerReviewDecision, EditPlanResult, EditPlanReviewDecision } from '../types/project';
 
 const ENCRYPTED_KEY_PREFIX = 'scriptcut_enc_';
 const LEGACY_ENCRYPTED_KEY_PREFIX = 'aive_enc_';
@@ -25,6 +25,7 @@ const DEFAULT_PROVIDERS: Record<AIProvider, AIProviderConfig> = {
 
 interface AIState {
   providers: Record<AIProvider, AIProviderConfig>;
+  providerChecks: Partial<Record<AIProvider, AIProviderConnectionCheck>>;
   defaultProvider: AIProvider;
   customFillerWords: string;
   customCensorWords: string;
@@ -44,6 +45,7 @@ interface AIState {
 
 interface AIActions {
   setProviderConfig: (provider: AIProvider, config: Partial<AIProviderConfig>) => void;
+  setProviderCheck: (provider: AIProvider, check?: AIProviderConnectionCheck) => void;
   setDefaultProvider: (provider: AIProvider) => void;
   setCustomFillerWords: (words: string) => void;
   setCustomCensorWords: (words: string) => void;
@@ -105,6 +107,7 @@ export const useAIStore = create<AIState & AIActions>()(
   persist(
     (set, get) => ({
       providers: DEFAULT_PROVIDERS,
+      providerChecks: {},
       defaultProvider: 'ollama',
       customFillerWords: '',
       customCensorWords: '',
@@ -127,12 +130,24 @@ export const useAIStore = create<AIState & AIActions>()(
             ...state.providers,
             [provider]: { ...state.providers[provider], ...config },
           },
+          providerChecks: {
+            ...state.providerChecks,
+            [provider]: undefined,
+          },
         }));
 
         if (config.apiKey !== undefined) {
           encryptAndStore(`${provider}_apiKey`, config.apiKey);
         }
       },
+
+      setProviderCheck: (provider, check) =>
+        set((state) => ({
+          providerChecks: {
+            ...state.providerChecks,
+            [provider]: check,
+          },
+        })),
 
       setDefaultProvider: (provider) => set({ defaultProvider: provider }),
 

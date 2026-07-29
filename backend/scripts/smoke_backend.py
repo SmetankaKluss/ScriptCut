@@ -473,9 +473,23 @@ class BackendSmokeTests(unittest.TestCase):
         status = transcription.get_transcription_engine_status()
         self.assertIn("faster-whisper", status["engines"])
         self.assertTrue(status["engines"]["faster-whisper"]["first_class"])
+        self.assertIn("downloads automatically", status["engines"]["faster-whisper"]["download_behavior"])
         self.assertIn("parakeet", status["engines"])
         self.assertTrue(status["engines"]["parakeet"]["first_class"])
         self.assertEqual(status["engines"]["parakeet"]["default_model"], transcription.PARAKEET_DEFAULT_MODEL)
+        if not status["engines"]["whisperx"]["available"]:
+            self.assertFalse(status["engines"]["whisperx"]["selectable"])
+            self.assertIn("desktop build", status["engines"]["whisperx"]["unavailable_reason"])
+
+    def test_unavailable_whisperx_explains_that_manual_model_download_is_not_enough(self) -> None:
+        transcription = self._load_transcription_service_or_skip()
+        original_available = transcription.WHISPERX_AVAILABLE
+        try:
+            transcription.WHISPERX_AVAILABLE = False
+            with self.assertRaisesRegex(RuntimeError, "Downloading a Whisper model manually"):
+                transcription._resolve_engine("whisperx")
+        finally:
+            transcription.WHISPERX_AVAILABLE = original_available
 
     def test_faster_whisper_normalizes_word_timestamps(self) -> None:
         transcription = self._load_transcription_service_or_skip()
@@ -801,6 +815,69 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(args[1], "grok-4.5")
         self.assertEqual(args[3], "https://api.x.ai/v1")
         self.assertEqual(args[6], "xAI")
+        self.assertEqual(args[7], "xai")
+
+    def test_cloud_provider_check_verifies_key_and_selected_model_without_completion(self) -> None:
+        response = SimpleNamespace(
+            ok=True,
+            status_code=200,
+            text="",
+            json=lambda: {
+                "object": "list",
+                "data": [
+                    {"id": "grok-4.5"},
+                    {"id": "grok-4.3"},
+                ],
+            },
+        )
+        with patch.object(ai_provider.requests, "get", return_value=response) as request:
+            result = ai_provider.AIProvider.check_cloud_provider(
+                provider="xai",
+                api_key="xai-test",
+                model="grok-4.5",
+            )
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["authenticated"])
+        self.assertTrue(result["model_available"])
+        self.assertEqual(result["models"], ["grok-4.3", "grok-4.5"])
+        self.assertEqual(request.call_args.args[0], "https://api.x.ai/v1/models")
+        self.assertEqual(request.call_args.kwargs["headers"]["Authorization"], "Bearer xai-test")
+
+    def test_cloud_provider_check_explains_rejected_xai_key(self) -> None:
+        response = SimpleNamespace(
+            ok=False,
+            status_code=400,
+            text="",
+            json=lambda: {
+                "code": "invalid-argument",
+                "error": "Incorrect API key provided.",
+            },
+        )
+        with patch.object(ai_provider.requests, "get", return_value=response):
+            result = ai_provider.AIProvider.check_cloud_provider(
+                provider="xai",
+                api_key="xai-secret",
+                model="grok-4.5",
+            )
+
+        self.assertFalse(result["ok"])
+        self.assertFalse(result["authenticated"])
+        self.assertEqual(result["code"], "invalid_key")
+        self.assertIn("did reach xAI", result["message"])
+        self.assertNotIn("xai-secret", str(result))
+
+    def test_completion_error_explains_openai_api_is_separate_from_chatgpt(self) -> None:
+        error = SimpleNamespace(status_code=401)
+        error.__str__ = lambda self: "Incorrect API key provided"
+        message = ai_provider._friendly_completion_error(
+            "openai",
+            "OpenAI",
+            RuntimeError("Incorrect API key provided"),
+            "gpt-4o",
+        )
+
+        self.assertIn("ChatGPT subscription does not include OpenAI API usage", message)
 
     def test_clip_request_includes_shorts_platform_guidance(self) -> None:
         captured: dict[str, str] = {}

@@ -53,11 +53,14 @@ type TranscriptionEngineStatus = {
   default_model?: string;
   engines?: Record<string, {
     available: boolean;
+    selectable?: boolean;
     default_model?: string;
     label?: string;
     first_class?: boolean;
     languages?: number;
     install_hint?: string;
+    download_behavior?: string;
+    unavailable_reason?: string | null;
   }>;
 };
 type SystemCheck = {
@@ -73,29 +76,29 @@ type SystemChecksResponse = {
 const TRANSCRIPTION_MODELS: Record<TranscriptionEngine, Array<{ value: string; label: string }>> = {
   auto: [
     { value: 'base', label: 'Auto best available' },
-    { value: 'small', label: 'small (~460 MB, better)' },
-    { value: 'medium', label: 'medium (~1.5 GB, high accuracy)' },
+    { value: 'small', label: 'small (better accuracy)' },
+    { value: 'medium', label: 'medium (high accuracy, slower)' },
   ],
   'faster-whisper': [
-    { value: 'tiny', label: 'tiny (~75 MB, fastest)' },
-    { value: 'base', label: 'base (~140 MB, fast)' },
-    { value: 'small', label: 'small (~460 MB, good)' },
-    { value: 'medium', label: 'medium (~1.5 GB, better)' },
-    { value: 'large-v3', label: 'large-v3 (~3 GB, best)' },
+    { value: 'tiny', label: 'tiny (fastest)' },
+    { value: 'base', label: 'base (recommended)' },
+    { value: 'small', label: 'small (better accuracy)' },
+    { value: 'medium', label: 'medium (high accuracy, slower)' },
+    { value: 'large-v3', label: 'large-v3 (best, very slow)' },
   ],
   whisperx: [
-    { value: 'tiny', label: 'tiny (~75 MB, fastest)' },
-    { value: 'base', label: 'base (~140 MB, fast)' },
-    { value: 'small', label: 'small (~460 MB, good)' },
-    { value: 'medium', label: 'medium (~1.5 GB, better)' },
-    { value: 'large', label: 'large (~2.9 GB, best)' },
+    { value: 'tiny', label: 'tiny (fastest)' },
+    { value: 'base', label: 'base (fast)' },
+    { value: 'small', label: 'small (good)' },
+    { value: 'medium', label: 'medium (better)' },
+    { value: 'large', label: 'large (best)' },
   ],
   whisper: [
-    { value: 'tiny', label: 'tiny (~75 MB, fastest)' },
-    { value: 'base', label: 'base (~140 MB, fast)' },
-    { value: 'small', label: 'small (~460 MB, good)' },
-    { value: 'medium', label: 'medium (~1.5 GB, better)' },
-    { value: 'large', label: 'large (~2.9 GB, best)' },
+    { value: 'tiny', label: 'tiny (fastest)' },
+    { value: 'base', label: 'base (fast)' },
+    { value: 'small', label: 'small (good)' },
+    { value: 'medium', label: 'medium (better)' },
+    { value: 'large', label: 'large (best)' },
   ],
   parakeet: [
     { value: 'nvidia/parakeet-tdt-0.6b-v3', label: 'Parakeet TDT v3 multilingual' },
@@ -589,15 +592,29 @@ export default function App() {
               onChange={(e) => {
                 const engine = e.target.value as TranscriptionEngine;
                 setTranscriptionEngine(engine);
-                setTranscriptionModel(TRANSCRIPTION_MODELS[engine][0].value);
+                setTranscriptionModel(
+                  transcriptionEngineStatus?.engines?.[engine]?.default_model ||
+                  TRANSCRIPTION_MODELS[engine].find((model) => model.value === 'base')?.value ||
+                  TRANSCRIPTION_MODELS[engine][0].value,
+                );
               }}
               className="px-3 py-1.5 bg-editor-bg border border-editor-border rounded-md text-xs text-editor-text focus:outline-none focus:border-editor-accent"
             >
               <option value="auto">Auto best available</option>
-              <option value="faster-whisper">Faster Whisper (recommended)</option>
-              <option value="parakeet">Parakeet TDT v3 multilingual</option>
-              <option value="whisperx">WhisperX aligned</option>
-              <option value="whisper">Whisper fallback</option>
+              {([
+                ['faster-whisper', 'Faster Whisper (recommended)'],
+                ['parakeet', 'Parakeet TDT v3 multilingual'],
+                ['whisperx', 'WhisperX aligned'],
+                ['whisper', 'Whisper fallback'],
+              ] as const).map(([engine, label]) => {
+                const engineInfo = transcriptionEngineStatus?.engines?.[engine];
+                const unavailable = !!transcriptionEngineStatus && !engineInfo?.available;
+                return (
+                  <option key={engine} value={engine} disabled={unavailable}>
+                    {label}{unavailable ? ' — not included in this build' : ''}
+                  </option>
+                );
+              })}
             </select>
             <select
               value={transcriptionModel}
@@ -612,12 +629,19 @@ export default function App() {
             </select>
           </div>
           <p className="mt-2 text-center text-[10px] leading-4">
-            {transcriptionEngine === 'parakeet' && !transcriptionEngineStatus?.engines?.parakeet?.available
-              ? 'Parakeet needs its optional local package. Auto will choose the best available engine instead.'
-              : transcriptionEngine === 'auto'
-                ? 'Auto uses the best available local transcription engine.'
-                : `${TRANSCRIPTION_MODELS[transcriptionEngine][0]?.label || 'Selected transcription engine'}.`}
+            {transcriptionEngine === 'auto'
+              ? 'Auto uses the best installed local engine. Its selected speech model downloads automatically on first use.'
+              : transcriptionEngineStatus?.engines?.[transcriptionEngine]?.available
+                ? transcriptionEngineStatus.engines[transcriptionEngine].download_behavior ||
+                  'The selected speech model downloads automatically on first use.'
+                : transcriptionEngineStatus?.engines?.[transcriptionEngine]?.unavailable_reason ||
+                  'This optional engine is not included in the desktop build. Choose Faster Whisper.'}
           </p>
+          {transcriptionEngineStatus && (
+            <p className="mt-1 text-center text-[10px] leading-4 text-editor-warning">
+              Disabled engines are separate program components. Downloading a model file does not install them.
+            </p>
+          )}
         </details>
 
         {IS_ELECTRON ? (
@@ -690,7 +714,7 @@ export default function App() {
               <StartWorkflowButton
                 icon={<FileVideo className="h-4 w-4" />}
                 title="Edit full video"
-                detail="Trim the transcript, then export"
+                detail="Open file and start transcription"
                 onClick={() => void handleOpenFile('full-video')}
               />
               <StartWorkflowButton
@@ -731,7 +755,7 @@ export default function App() {
                 <StartWorkflowButton
                   icon={isBrowserUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileVideo className="h-4 w-4" />}
                   title="Edit full video"
-                  detail="Choose a file from your folders"
+                  detail="Choose file and start transcription"
                   onClick={() => void handleOpenFile('full-video')}
                   disabled={isBrowserUploading}
                 />

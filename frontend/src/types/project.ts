@@ -127,6 +127,16 @@ export interface AIProviderConfig {
   model: string;
 }
 
+export interface AIProviderConnectionCheck {
+  ok: boolean;
+  authenticated: boolean;
+  provider: string;
+  code: string;
+  message: string;
+  models: string[];
+  model_available?: boolean | null;
+}
+
 export interface FillerWordResult {
   wordIndices: number[];
   fillerWords: Array<{ index: number; word: string; reason: string; confidence?: number }>;

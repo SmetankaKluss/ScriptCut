@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useEditorStore } from '../store/editorStore';
 import { useAIStore } from '../store/aiStore';
-import { Sparkles, Scissors, Film, Loader2, Check, X, Play, Download, RotateCcw, Plus, Users, Filter, Image, Clipboard, ExternalLink, ShieldAlert, VolumeX } from 'lucide-react';
+import { Sparkles, Scissors, Film, Loader2, Check, X, Play, Download, RotateCcw, Plus, Users, Filter, Image, Clipboard, ExternalLink, ShieldAlert, VolumeX, AlertTriangle } from 'lucide-react';
 import type { CaptionStyle, ClipDraft, ClipDraftStatus, ClipSuggestion, EditPlanReviewDecision, EditPlanResult, EditPlanSuggestion, FillerReviewDecision, FillerWordResult, TopicSelectionSegment, Word } from '../types/project';
 import {
   getClipDraftReadinessScore,
@@ -121,6 +121,13 @@ const SHORTS_DRAFT_DEFAULTS = {
 
 const EXPORTABLE_DRAFT_STATUSES = new Set<ClipDraftStatus>(['draft', 'packaged', 'failed']);
 const CLIP_EXPORT_DIRECTORY_KEY = 'scriptcut.clipExport.directory';
+const AI_PROVIDER_LABELS = {
+  ollama: 'Ollama',
+  openai: 'OpenAI',
+  claude: 'Claude',
+  xai: 'Grok (xAI)',
+  '9router': '9router',
+} as const;
 
 function getClipQueueSummary(drafts: ClipDraft[]) {
   return {
@@ -186,6 +193,7 @@ export default function AIPanel() {
   const [fillerQueueFilter, setFillerQueueFilter] = useState<FillerQueueFilter>('all');
   const [fillerReasonFilter, setFillerReasonFilter] = useState('all');
   const [activeAIJob, setActiveAIJob] = useState<(AIJob<unknown> & AIJobContext) | null>(null);
+  const [aiActionError, setAIActionError] = useState('');
   const [backgroundCapabilities, setBackgroundCapabilities] = useState<BackgroundCapabilities | null>(null);
   const [activeClipDraftId, setActiveClipDraftId] = useState<string | null>(null);
   const [clipExportDirectory, setClipExportDirectory] = useState(() => window.localStorage.getItem(CLIP_EXPORT_DIRECTORY_KEY) || '');
@@ -465,9 +473,16 @@ export default function AIPanel() {
   const createEditPlan = useCallback(async () => {
     const instruction = editPlanInstruction.trim();
     if (words.length === 0 || !instruction) return;
+    setAIActionError('');
     setProcessing(true, 'Ищу фрагменты по теме...');
     try {
       const config = providers[defaultProvider];
+      if (['openai', 'claude', 'xai'].includes(defaultProvider) && !config.apiKey?.trim()) {
+        throw new Error(
+          `${AI_PROVIDER_LABELS[defaultProvider]} выбран как активный провайдер, но API-ключ пуст. ` +
+          'Откройте Settings, вставьте ключ и нажмите Test connection.',
+        );
+      }
       const data = await startAIJob<EditPlanResult>(
         '/jobs/ai/edit-plan',
         {
@@ -491,7 +506,7 @@ export default function AIPanel() {
       setEditPlanResult(data);
     } catch (err) {
       console.error(err);
-      alert(`Не удалось найти фрагменты по теме.\n\n${err instanceof Error ? err.message : String(err)}`);
+      setAIActionError(err instanceof Error ? err.message : String(err));
     } finally {
       setProcessing(false);
     }
@@ -1328,6 +1343,36 @@ export default function AIPanel() {
               Опишите тему — приложение найдёт все связанные фрагменты даже в длинном стриме.
               Сначала проверьте найденные эпизоды и предложенные удаления, затем примените монтаж.
             </p>
+            <div className="rounded border border-editor-border bg-editor-surface px-3 py-2 text-[11px]">
+              <div className="font-medium text-editor-text">
+                Активный AI: {AI_PROVIDER_LABELS[defaultProvider]}
+              </div>
+              <div className="mt-0.5 text-editor-text-muted">
+                Модель: {providers[defaultProvider].model || 'не выбрана'}. Для этого запроса используется только этот провайдер.
+              </div>
+            </div>
+            {aiActionError && (
+              <div className="rounded border border-editor-danger/30 bg-editor-danger/10 px-3 py-2 text-xs text-editor-danger">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                  <div className="min-w-0">
+                    <div className="font-medium">AI-запрос не выполнен</div>
+                    <p className="mt-1 break-words leading-relaxed">{aiActionError}</p>
+                    <p className="mt-1 text-[10px] text-editor-text-muted">
+                      Откройте Settings → активный провайдер → Test connection. Повторная транскрибация не нужна.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setAIActionError('')}
+                    className="shrink-0 text-editor-text-muted hover:text-editor-text"
+                    aria-label="Dismiss AI error"
+                  >
+                    <X className="h-3.5 w-3.5" />
+                  </button>
+                </div>
+              </div>
+            )}
             <div className="space-y-1.5">
               <label className="text-[11px] text-editor-text-muted font-medium">
                 Что оставить в видео

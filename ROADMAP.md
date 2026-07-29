@@ -13,6 +13,13 @@
 - Bug fixes from early users
 - Clearer local setup guidance
 
+## v0.1.2
+
+- Verifiable OpenAI and xAI API keys without sending a transcript
+- Explicit active provider and friendly authentication errors
+- Honest desktop transcription-engine availability
+- Automatic Faster Whisper model guidance
+
 ## v0.2.0
 
 - Better AI clipping workflow
