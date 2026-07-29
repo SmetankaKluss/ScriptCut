@@ -62,4 +62,14 @@ for (const script of [
   assert(fs.existsSync(path.join(root, script)), `Missing ${script}`);
 }
 
+const windowsFfmpegDownloader = read('scripts/download-windows-ffmpeg.js');
+assert(
+  windowsFfmpegDownloader.includes('versionedAssetPattern'),
+  'Windows FFmpeg resolution must support versioned release asset names',
+);
+assert(
+  windowsFfmpegDownloader.includes('expectedChecksum(checksums)'),
+  'Versioned Windows FFmpeg downloads must remain checksum verified',
+);
+
 console.log('Desktop packaging configuration smoke checks passed.');

@@ -36,7 +36,20 @@ def run_transcription(req: TranscribeRequest, progress_callback=None):
             progress_callback(percent, message)
 
     try:
-        progress(5, "Preparing transcription")
+        engine_label = {
+            "auto": "the best available transcription engine",
+            "faster-whisper": "Faster Whisper",
+            "whisperx": "WhisperX",
+            "whisper": "Whisper",
+            "parakeet": "Parakeet",
+        }.get(req.engine, req.engine)
+        progress(
+            5,
+            (
+                f"Loading {engine_label} model '{req.model}'. "
+                "On first use, an available engine downloads its speech model automatically."
+            ),
+        )
         result = transcribe_audio(
             file_path=req.file_path,
             model_name=req.model,

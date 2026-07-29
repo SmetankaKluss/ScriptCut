@@ -10,6 +10,19 @@ import requests
 
 logger = logging.getLogger(__name__)
 
+_CLOUD_PROVIDER_CONFIG = {
+    "openai": {
+        "label": "OpenAI",
+        "base_url": "https://api.openai.com/v1",
+        "key_url": "https://platform.openai.com/api-keys",
+    },
+    "xai": {
+        "label": "xAI",
+        "base_url": "https://api.x.ai/v1",
+        "key_url": "https://console.x.ai/",
+    },
+}
+
 
 class AIProvider:
     """Routes completion requests to the configured provider."""
@@ -39,6 +52,7 @@ class AIProvider:
                 system_prompt,
                 temperature,
                 "xAI",
+                "xai",
             )
         elif provider == "9router":
             return _nine_router_complete(
@@ -106,6 +120,138 @@ class AIProvider:
             logger.error(f"9router model listing error: {e}")
             return []
 
+    @staticmethod
+    def check_cloud_provider(
+        provider: str,
+        api_key: Optional[str],
+        model: Optional[str] = None,
+        base_url: Optional[str] = None,
+    ) -> dict:
+        """Verify a cloud key and selected model without making a completion request."""
+        config = _CLOUD_PROVIDER_CONFIG.get(provider)
+        if not config:
+            return {
+                "ok": False,
+                "authenticated": False,
+                "provider": provider,
+                "code": "unsupported_provider",
+                "message": f"Connection testing is not available for provider '{provider}'.",
+                "models": [],
+                "model_available": None,
+            }
+
+        provider_label = str(config["label"])
+        key = (api_key or "").strip()
+        selected_model = (model or "").strip()
+        endpoint = _normalize_base_url(base_url or str(config["base_url"]))
+        if not key:
+            return {
+                "ok": False,
+                "authenticated": False,
+                "provider": provider,
+                "code": "missing_key",
+                "message": f"Enter a {provider_label} API key first.",
+                "models": [],
+                "model_available": None,
+            }
+
+        try:
+            response = requests.get(
+                f"{endpoint}/models",
+                headers={"Authorization": f"Bearer {key}"},
+                timeout=15,
+            )
+        except requests.RequestException as error:
+            logger.warning("%s connection test failed: %s", provider_label, error)
+            return {
+                "ok": False,
+                "authenticated": False,
+                "provider": provider,
+                "code": "network_error",
+                "message": (
+                    f"Could not reach {provider_label}. Check the internet connection, "
+                    "VPN/firewall, and try again."
+                ),
+                "models": [],
+                "model_available": None,
+            }
+
+        if not response.ok:
+            error_text = _safe_provider_error_text(response, key)
+            code, message, authenticated = _classify_provider_error(
+                provider,
+                provider_label,
+                error_text,
+                response.status_code,
+                selected_model,
+            )
+            logger.warning(
+                "%s connection test was rejected with status %s (%s)",
+                provider_label,
+                response.status_code,
+                code,
+            )
+            return {
+                "ok": False,
+                "authenticated": authenticated,
+                "provider": provider,
+                "code": code,
+                "message": message,
+                "models": [],
+                "model_available": None,
+            }
+
+        try:
+            payload = response.json()
+        except ValueError:
+            return {
+                "ok": False,
+                "authenticated": True,
+                "provider": provider,
+                "code": "invalid_response",
+                "message": f"{provider_label} accepted the key but returned an unreadable model list.",
+                "models": [],
+                "model_available": None,
+            }
+
+        raw_models = payload.get("data", payload if isinstance(payload, list) else [])
+        models = sorted(
+            {
+                model_id
+                for model_id in (_extract_model_id(item) for item in raw_models)
+                if model_id
+            }
+        )
+        model_available = selected_model in models if selected_model else None
+        if selected_model and not model_available:
+            return {
+                "ok": False,
+                "authenticated": True,
+                "provider": provider,
+                "code": "model_unavailable",
+                "message": (
+                    f"{provider_label} accepted the key, but model '{selected_model}' is not "
+                    "available to this account. Choose one of the models loaded below."
+                ),
+                "models": models[:500],
+                "model_available": False,
+            }
+
+        return {
+            "ok": True,
+            "authenticated": True,
+            "provider": provider,
+            "code": "ok",
+            "message": (
+                f"{provider_label} connection verified. "
+                f"Model '{selected_model}' is available."
+                if selected_model
+                else f"{provider_label} connection verified."
+            ),
+            "models": models[:500],
+            "model_available": model_available,
+        }
+
 
 def _normalize_base_url(base_url: Optional[str]) -> str:
     url = (base_url or "http://localhost:11434").strip()
@@ -124,6 +270,114 @@ def _extract_model_id(model: object) -> Optional[str]:
         if isinstance(value, str) and value.strip():
             return value.strip()
     return None
+
+
+def _safe_provider_error_text(response: requests.Response, api_key: str) -> str:
+    try:
+        payload = response.json()
+        text = json.dumps(payload, ensure_ascii=False)
+    except ValueError:
+        text = response.text
+    if api_key:
+        text = text.replace(api_key, "[redacted]")
+    return text[:1000]
+
+
+def _classify_provider_error(
+    provider: str,
+    provider_label: str,
+    error_text: str,
+    status_code: int,
+    model: str = "",
+) -> tuple[str, str, bool]:
+    lowered = error_text.lower()
+    key_url = str(_CLOUD_PROVIDER_CONFIG.get(provider, {}).get("key_url", ""))
+    if any(
+        marker in lowered
+        for marker in (
+            "incorrect api key",
+            "invalid api key",
+            "invalid_api_key",
+            "authentication_error",
+            "unauthorized",
+        )
+    ) or status_code == 401:
+        extra = (
+            " A ChatGPT subscription does not include OpenAI API usage."
+            if provider == "openai"
+            else ""
+        )
+        return (
+            "invalid_key",
+            (
+                f"{provider_label} rejected this API key before processing the transcript. "
+                f"The request did reach {provider_label}, but no completion tokens were used."
+                f"{extra} Create a new API key at {key_url} and test it in Settings."
+            ),
+            False,
+        )
+    if status_code == 403 or any(marker in lowered for marker in ("permission", "forbidden", "acl")):
+        permission_hint = (
+            " Make sure the key has access to the Models and Chat endpoints and to the selected model."
+            if provider == "xai"
+            else ""
+        )
+        return (
+            "permission_denied",
+            f"{provider_label} recognized the key but denied access.{permission_hint}",
+            True,
+        )
+    if any(
+        marker in lowered
+        for marker in (
+            "model_not_found",
+            "model not found",
+            "does not exist",
+            "not have access to model",
+        )
+    ):
+        model_label = f" '{model}'" if model else ""
+        return (
+            "model_unavailable",
+            (
+                f"{provider_label} accepted the key, but model{model_label} is not available. "
+                "Open Settings, test the connection, and choose a returned model."
+            ),
+            True,
+        )
+    if status_code == 429 or any(marker in lowered for marker in ("quota", "billing", "rate limit")):
+        return (
+            "quota_or_rate_limit",
+            (
+                f"{provider_label} accepted the request but the API account has no available "
+                "quota, billing, or rate-limit capacity."
+            ),
+            True,
+        )
+    return (
+        "provider_error",
+        f"{provider_label} rejected the request (HTTP {status_code}). Test the connection in Settings.",
+        False,
+    )
+
+
+def _friendly_completion_error(
+    provider: str,
+    provider_name: str,
+    error: Exception,
+    model: str,
+) -> str:
+    status_code = int(getattr(error, "status_code", 0) or 0)
+    code, message, _authenticated = _classify_provider_error(
+        provider,
+        provider_name,
+        str(error),
+        status_code,
+        model,
+    )
+    if code != "provider_error":
+        return message
+    return f"{provider_name} request failed. Test the active provider in Settings and try again."
 
 
 def _ollama_complete(prompt: str, model: str, base_url: str, system_prompt: Optional[str], temperature: float) -> str:
@@ -147,7 +401,16 @@ def _ollama_complete(prompt: str, model: str, base_url: str, system_prompt: Opti
 
 
 def _openai_complete(prompt: str, model: str, api_key: str, system_prompt: Optional[str], temperature: float) -> str:
-    return _openai_compatible_complete(prompt, model, api_key, None, system_prompt, temperature, "OpenAI")
+    return _openai_compatible_complete(
+        prompt,
+        model,
+        api_key,
+        None,
+        system_prompt,
+        temperature,
+        "OpenAI",
+        "openai",
+    )
 
 
 def _openai_compatible_complete(
@@ -158,6 +421,7 @@ def _openai_compatible_complete(
     system_prompt: Optional[str],
     temperature: float,
     provider_name: str,
+    provider: str = "openai",
 ) -> str:
     try:
         from openai import OpenAI
@@ -177,8 +441,9 @@ def _openai_compatible_complete(
         )
         return response.choices[0].message.content.strip()
     except Exception as e:
-        logger.error(f"{provider_name} error: {e}")
-        raise
+        friendly_error = _friendly_completion_error(provider, provider_name, e, model)
+        logger.error("%s request failed: %s", provider_name, friendly_error)
+        raise RuntimeError(friendly_error) from e
 
 
 def _nine_router_complete(

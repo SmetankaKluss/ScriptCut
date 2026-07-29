@@ -108,6 +108,9 @@ jobs:
           - The build is unsigned, so Windows SmartScreen may show a warning.
           - Faster Whisper safely falls back from unsupported float16 GPUs to CPU.
           - Long-stream waveforms are generated with bounded memory through FFmpeg.
+          - Optional transcription engines that are not bundled are clearly disabled.
+          - OpenAI and xAI keys/models can be tested without sending transcript text.
+          - AI Editor shows the active provider and explains authentication failures.
 
           This payload was promoted only after native Windows CI started the
           packaged backend, rendered a vertical MP4 with ASS captions and a

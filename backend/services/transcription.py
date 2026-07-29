@@ -160,14 +160,22 @@ def _resolve_engine(engine: TranscriptionEngine) -> TranscriptionEngine:
             raise RuntimeError(f"Unknown transcription engine: {engine}")
         if engine == "parakeet" and not NEMO_AVAILABLE:
             raise RuntimeError(
-                "Parakeet TDT v3 is not available. Install NVIDIA NeMo ASR dependencies or choose WhisperX/Whisper."
+                "Parakeet TDT v3 is not included in this ScriptCut build. "
+                "Choose Faster Whisper; its speech model downloads automatically on first use."
             )
         if engine == "faster-whisper" and not FASTER_WHISPER_AVAILABLE:
             raise RuntimeError("faster-whisper is not installed. Run the standard backend setup.")
         if engine == "whisperx" and not WHISPERX_AVAILABLE:
-            raise RuntimeError("WhisperX is not installed. Install whisperx or choose another transcription engine.")
+            raise RuntimeError(
+                "WhisperX is not included in this ScriptCut build. Downloading a Whisper model "
+                "manually will not install WhisperX. Choose Faster Whisper; its selected model "
+                "downloads automatically on first use."
+            )
         if engine == "whisper" and not WHISPER_AVAILABLE:
-            raise RuntimeError("OpenAI Whisper is not installed. Install openai-whisper or choose another transcription engine.")
+            raise RuntimeError(
+                "Legacy Whisper is not included in this ScriptCut build. Choose Faster Whisper; "
+                "its selected model downloads automatically on first use."
+            )
         return engine
     if NEMO_AVAILABLE:
         return "parakeet"
@@ -214,29 +222,57 @@ def get_transcription_engine_status() -> dict:
         "engines": {
             "faster-whisper": {
                 "available": FASTER_WHISPER_AVAILABLE,
+                "selectable": FASTER_WHISPER_AVAILABLE,
                 "default_model": "base",
                 "label": "Faster Whisper word timestamps",
                 "first_class": True,
+                "download_behavior": "Selected speech model downloads automatically on first use.",
+                "unavailable_reason": (
+                    None
+                    if FASTER_WHISPER_AVAILABLE
+                    else "The core transcription package is missing from this installation."
+                ),
             },
             "parakeet": {
                 "available": NEMO_AVAILABLE,
+                "selectable": NEMO_AVAILABLE,
                 "default_model": PARAKEET_DEFAULT_MODEL,
                 "label": "Parakeet TDT v3 multilingual",
                 "first_class": True,
                 "languages": 25,
                 "install_hint": "pip install -U nemo_toolkit['asr']",
+                "download_behavior": "Optional engine; not installed by downloading a speech model.",
+                "unavailable_reason": (
+                    None
+                    if NEMO_AVAILABLE
+                    else "Not included in this desktop build. Use Faster Whisper."
+                ),
             },
             "whisperx": {
                 "available": WHISPERX_AVAILABLE,
+                "selectable": WHISPERX_AVAILABLE,
                 "default_model": "base",
                 "label": "WhisperX aligned",
                 "first_class": True,
+                "download_behavior": "Optional engine; not installed by downloading a Whisper model.",
+                "unavailable_reason": (
+                    None
+                    if WHISPERX_AVAILABLE
+                    else "Not included in this desktop build. Use Faster Whisper."
+                ),
             },
             "whisper": {
                 "available": WHISPER_AVAILABLE,
+                "selectable": WHISPER_AVAILABLE,
                 "default_model": "base",
                 "label": "Whisper fallback",
                 "first_class": True,
+                "download_behavior": "Optional legacy engine.",
+                "unavailable_reason": (
+                    None
+                    if WHISPER_AVAILABLE
+                    else "Not included in this desktop build. Use Faster Whisper."
+                ),
             },
         },
     }
