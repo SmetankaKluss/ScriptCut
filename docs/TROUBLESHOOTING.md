@@ -88,7 +88,8 @@ Expected response:
 
 ## AI Features Do Not Work
 
-Local AI features require Ollama to be running, or a configured cloud provider key in Settings.
+Local AI features require Ollama to be running, a configured cloud provider key,
+or a local Codex CLI signed in with ChatGPT.
 
 ```bash
 ollama list
@@ -117,6 +118,26 @@ endpoints and to the selected model.
 A ChatGPT Plus/Pro subscription and OpenAI API billing are separate. Create an
 API key in the OpenAI API platform and make sure the API account has billing or
 credits available.
+
+### Use the ChatGPT/Codex subscription without an OpenAI API key
+
+ScriptCut 0.1.3 can use the official local Codex CLI and its saved ChatGPT
+login:
+
+1. Run `codex login status` in Terminal or PowerShell.
+2. If needed, run `codex login` and choose **Sign in with ChatGPT**.
+3. In ScriptCut open **More → Settings → Codex account**.
+4. Click **Test connection**, then **Use Codex account in AI Editor**.
+5. Keep `gpt-5.6-luna` for repeated transcript extraction, or choose Terra/Sol
+   when a difficult edit needs more reasoning.
+
+ScriptCut never reads or stores the Codex OAuth token. It launches `codex exec`
+in an ephemeral read-only workspace and removes ambient OpenAI API keys from the
+child process. An API-key-authenticated Codex session is rejected so the app
+cannot silently switch to separate API billing.
+
+ChatGPT plan usage remains subject to Codex rate and credit limits. Transcript
+text is sent to OpenAI when Codex account is the active provider.
 
 ### WhisperX or another transcription engine does not download
 

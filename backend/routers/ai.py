@@ -228,6 +228,11 @@ async def nine_router_models(req: ModelListRequest):
 
 @router.post("/ai/provider-check")
 async def provider_check(req: ProviderCheckRequest):
+    if req.provider == "codex":
+        return AIProvider.check_codex(
+            executable_path=req.base_url,
+            model=req.model,
+        )
     return AIProvider.check_cloud_provider(
         provider=req.provider,
         api_key=req.api_key,

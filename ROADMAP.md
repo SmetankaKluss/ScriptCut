@@ -20,6 +20,12 @@
 - Honest desktop transcription-engine availability
 - Automatic Faster Whisper model guidance
 
+## v0.1.3
+
+- ChatGPT/Codex account provider through the official local Codex CLI
+- Subscription-login verification that refuses accidental API-key billing
+- Sandboxed, ephemeral Codex transcript analysis with Luna as the default
+
 ## v0.2.0
 
 - Better AI clipping workflow

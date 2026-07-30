@@ -118,7 +118,7 @@ export interface CaptionStyle {
   animation?: 'none' | 'pop' | 'karaoke';
 }
 
-export type AIProvider = 'ollama' | 'openai' | 'claude' | 'xai' | '9router';
+export type AIProvider = 'ollama' | 'openai' | 'claude' | 'xai' | 'codex' | '9router';
 
 export interface AIProviderConfig {
   provider: AIProvider;

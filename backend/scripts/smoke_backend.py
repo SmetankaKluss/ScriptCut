@@ -798,6 +798,31 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(result["selectedSegments"], [])
         self.assertEqual(result["suggestions"], [])
 
+    def test_codex_topic_edit_uses_larger_windows_to_reduce_plan_turns(self) -> None:
+        words = [
+            {
+                "index": index,
+                "word": f"word-{index}",
+                "start": index * 0.25,
+                "end": (index + 1) * 0.25,
+            }
+            for index in range(2400)
+        ]
+
+        with patch.object(
+            ai_provider.AIProvider,
+            "complete",
+            return_value='{"relevantRanges": []}',
+        ) as complete:
+            result = ai_provider.create_topic_edit_plan(
+                instruction="find one topic",
+                words=words,
+                provider="codex",
+            )
+
+        self.assertEqual(complete.call_count, 1)
+        self.assertEqual(result["metrics"]["chunkCount"], 1)
+
     def test_xai_provider_uses_official_openai_compatible_endpoint(self) -> None:
         with patch.object(
             ai_provider,
@@ -816,6 +841,110 @@ class BackendSmokeTests(unittest.TestCase):
         self.assertEqual(args[3], "https://api.x.ai/v1")
         self.assertEqual(args[6], "xAI")
         self.assertEqual(args[7], "xai")
+
+    def test_codex_status_requires_chatgpt_managed_login(self) -> None:
+        version = subprocess.CompletedProcess(
+            ["codex", "--version"],
+            0,
+            stdout="codex-cli 1.2.3\n",
+            stderr="",
+        )
+        login = subprocess.CompletedProcess(
+            ["codex", "login", "status"],
+            0,
+            stdout="Logged in using ChatGPT\n",
+            stderr="",
+        )
+        with (
+            patch.object(ai_provider, "_find_codex_executable", return_value="/tmp/codex"),
+            patch.object(ai_provider, "_run_codex_process", side_effect=[version, login]) as run,
+        ):
+            result = ai_provider.AIProvider.check_codex(model="gpt-5.6-luna")
+
+        self.assertTrue(result["ok"])
+        self.assertTrue(result["authenticated"])
+        self.assertEqual(result["provider"], "codex")
+        self.assertIn("ChatGPT", result["message"])
+        self.assertIn("gpt-5.6-luna", result["models"])
+        self.assertEqual(run.call_count, 2)
+
+    def test_codex_status_rejects_api_key_login_to_avoid_separate_billing(self) -> None:
+        version = subprocess.CompletedProcess(
+            ["codex", "--version"],
+            0,
+            stdout="codex-cli 1.2.3\n",
+            stderr="",
+        )
+        login = subprocess.CompletedProcess(
+            ["codex", "login", "status"],
+            0,
+            stdout="Logged in using API key\n",
+            stderr="",
+        )
+        with (
+            patch.object(ai_provider, "_find_codex_executable", return_value="/tmp/codex"),
+            patch.object(ai_provider, "_run_codex_process", side_effect=[version, login]),
+        ):
+            result = ai_provider.AIProvider.check_codex()
+
+        self.assertFalse(result["ok"])
+        self.assertTrue(result["authenticated"])
+        self.assertEqual(result["code"], "codex_api_key_login")
+        self.assertIn("included ChatGPT plan", result["message"])
+
+    def test_codex_provider_uses_ephemeral_read_only_cli_run(self) -> None:
+        completed = subprocess.CompletedProcess(
+            ["codex", "exec"],
+            0,
+            stdout='{"ok": true}\n',
+            stderr="",
+        )
+        with (
+            patch.object(ai_provider, "_find_codex_executable", return_value="/tmp/codex"),
+            patch.object(
+                ai_provider.AIProvider,
+                "check_codex",
+                return_value={"ok": True, "message": "ready"},
+            ),
+            patch.object(ai_provider, "_run_codex_process", return_value=completed) as run,
+        ):
+            result = ai_provider.AIProvider.complete(
+                prompt='Return {"ok": true}',
+                provider="codex",
+                model="gpt-5.6-luna",
+                system_prompt="Return JSON only.",
+            )
+
+        self.assertEqual(result, '{"ok": true}')
+        args = run.call_args.args[1]
+        self.assertIn("exec", args)
+        self.assertIn("--ephemeral", args)
+        self.assertIn("--ignore-user-config", args)
+        self.assertIn("--ignore-rules", args)
+        self.assertIn("read-only", args)
+        self.assertIn("gpt-5.6-luna", args)
+        self.assertIn("<scriptcut_task>", run.call_args.kwargs["input_text"])
+
+    def test_codex_process_removes_ambient_openai_api_keys(self) -> None:
+        completed = subprocess.CompletedProcess(["codex"], 0, stdout="ok", stderr="")
+        with (
+            patch.dict(
+                ai_provider.os.environ,
+                {
+                    "OPENAI_API_KEY": "should-not-leak",
+                    "CODEX_API_KEY": "should-not-leak",
+                    "SCRIPTCUT_SAFE_TEST": "kept",
+                },
+                clear=False,
+            ),
+            patch.object(ai_provider.subprocess, "run", return_value=completed) as run,
+        ):
+            ai_provider._run_codex_process("/tmp/codex", ["--version"])
+
+        environment = run.call_args.kwargs["env"]
+        self.assertNotIn("OPENAI_API_KEY", environment)
+        self.assertNotIn("CODEX_API_KEY", environment)
+        self.assertEqual(environment["SCRIPTCUT_SAFE_TEST"], "kept")
 
     def test_cloud_provider_check_verifies_key_and_selected_model_without_completion(self) -> None:
         response = SimpleNamespace(
