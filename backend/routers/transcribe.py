@@ -15,7 +15,7 @@ router = APIRouter()
 
 class TranscribeRequest(BaseModel):
     file_path: str
-    model: str = "base"
+    model: str = "smart"
     engine: str = "auto"
     language: Optional[str] = None
     use_gpu: bool = True
@@ -43,13 +43,18 @@ def run_transcription(req: TranscribeRequest, progress_callback=None):
             "whisper": "Whisper",
             "parakeet": "Parakeet",
         }.get(req.engine, req.engine)
-        progress(
-            5,
-            (
-                f"Loading {engine_label} model '{req.model}'. "
-                "On first use, an available engine downloads its speech model automatically."
-            ),
-        )
+        if req.model == "smart":
+            progress(
+                5,
+                "Smart Transcript выбирает оптимальную модель для этого компьютера. "
+                "При первом запуске модель речи скачается автоматически.",
+            )
+        else:
+            progress(
+                5,
+                f"Загружаем {engine_label}, модель «{req.model}». "
+                "При первом запуске модель речи скачается автоматически.",
+            )
         result = transcribe_audio(
             file_path=req.file_path,
             model_name=req.model,
@@ -57,10 +62,11 @@ def run_transcription(req: TranscribeRequest, progress_callback=None):
             use_gpu=req.use_gpu,
             use_cache=req.use_cache,
             language=req.language,
+            progress_callback=progress,
         )
 
         if req.diarize and req.hf_token:
-            progress(75, "Labeling speakers")
+            progress(75, "Определяем говорящих")
             result = diarize_and_label(
                 transcription_result=result,
                 audio_path=req.file_path,
@@ -69,7 +75,7 @@ def run_transcription(req: TranscribeRequest, progress_callback=None):
                 use_gpu=req.use_gpu,
             )
 
-        progress(100, "Transcription complete")
+        progress(100, "Расшифровка готова")
         return result
 
     except FileNotFoundError:

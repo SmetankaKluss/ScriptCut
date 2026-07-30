@@ -189,7 +189,7 @@ export default function AIPanel() {
     setProcessing,
   } = useAIStore();
 
-  const [activeTab, setActiveTab] = useState<'edit' | 'censor' | 'filler' | 'clips'>('edit');
+  const [activeTab, setActiveTab] = useState<'edit' | 'censor' | 'filler' | 'clips'>('censor');
   const [topicContextPadding, setTopicContextPadding] = useState(0.45);
   const [fillerQueueFilter, setFillerQueueFilter] = useState<FillerQueueFilter>('all');
   const [fillerReasonFilter, setFillerReasonFilter] = useState('all');
@@ -1305,19 +1305,19 @@ export default function AIPanel() {
   ]);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="scriptcut-panel flex flex-col h-full">
       <div className="flex border-b border-editor-border shrink-0">
         <TabButton
           active={activeTab === 'edit'}
           onClick={() => setActiveTab('edit')}
           icon={<Sparkles className="w-3.5 h-3.5" />}
-          label="AI Editor"
+          label="Темы"
         />
         <TabButton
           active={activeTab === 'filler'}
           onClick={() => setActiveTab('filler')}
           icon={<Scissors className="w-3.5 h-3.5" />}
-          label="Filler Words"
+          label="Паузы"
         />
         <TabButton
           active={activeTab === 'censor'}
@@ -1329,7 +1329,7 @@ export default function AIPanel() {
           active={activeTab === 'clips'}
           onClick={() => setActiveTab('clips')}
           icon={<Film className="w-3.5 h-3.5" />}
-          label="Create Clips"
+          label="Клипы"
         />
       </div>
 
@@ -1549,16 +1549,16 @@ export default function AIPanel() {
         )}
 
         {activeTab === 'censor' && (
-          <div className="space-y-4">
-            <p className="text-xs leading-relaxed text-editor-text-muted">
-              Поиск работает локально по готовой расшифровке. Совпадения не меняют видео,
-              пока вы не примените к ним звуковой слой.
+          <div>
+            <p className="scriptcut-review-section -mx-4 -mt-4 px-4 py-3 text-xs leading-relaxed text-editor-text-muted">
+              Smart Transcript ищет формы, искажения и слова, разбитые распознаванием на части.
+              Всё работает локально и не меняет видео, пока вы не подтвердите совпадение.
             </p>
-            <label className="flex items-center justify-between gap-3 rounded border border-editor-border bg-editor-surface px-3 py-2 text-xs">
+            <label className="scriptcut-review-section -mx-4 flex items-center justify-between gap-3 px-4 py-3 text-xs">
               <span>
                 <span className="block font-medium">Русский словарь мата</span>
                 <span className="text-[10px] text-editor-text-muted">
-                  Проверяйте совпадения: распознавание речи может ошибаться
+                  Морфология, маскировка, смешанная раскладка и разбитые слова
                 </span>
               </span>
               <input
@@ -1568,7 +1568,7 @@ export default function AIPanel() {
                 className="h-4 w-4 accent-editor-accent"
               />
             </label>
-            <div className="space-y-1.5">
+            <div className="scriptcut-review-section -mx-4 space-y-1.5 px-4 py-3">
               <label className="text-[11px] font-medium text-editor-text-muted">
                 Дополнительные слова или фразы
               </label>
@@ -1580,7 +1580,7 @@ export default function AIPanel() {
                 className="w-full resize-none rounded border border-editor-border bg-editor-surface px-2.5 py-2 text-xs text-editor-text placeholder:text-editor-text-muted/50 focus:border-editor-accent focus:outline-none"
               />
             </div>
-            <div className="space-y-1.5">
+            <div className="scriptcut-review-section -mx-4 space-y-1.5 px-4 py-3">
               <label className="text-[11px] font-medium text-editor-text-muted">
                 Способ замены
               </label>
@@ -1604,7 +1604,7 @@ export default function AIPanel() {
                 ))}
               </div>
             </div>
-            <div className="flex items-center justify-between gap-2 rounded bg-editor-surface px-3 py-2">
+            <div className="scriptcut-review-section -mx-4 flex items-center justify-between gap-2 px-4 py-3">
               <div>
                 <div className="text-xs font-medium">Найдено: {censorMatches.length}</div>
                 <div className="text-[10px] text-editor-text-muted">
@@ -1621,7 +1621,7 @@ export default function AIPanel() {
               </button>
             </div>
             {censorMatches.length > 0 ? (
-              <div className="max-h-[36rem] space-y-2 overflow-y-auto pr-1">
+              <div className="-mx-4 max-h-[36rem] overflow-y-auto">
                 {censorMatches.map((match) => {
                   const alreadyApplied = Array.from(
                     { length: match.endWordIndex - match.startWordIndex + 1 },
@@ -1642,7 +1642,7 @@ export default function AIPanel() {
                 })}
               </div>
             ) : (
-              <p className="rounded bg-editor-surface px-3 py-2 text-xs text-editor-text-muted">
+              <p className="-mx-4 px-4 py-3 text-xs text-editor-text-muted">
                 Совпадений пока нет. Добавьте свои слова или включите встроенный словарь.
               </p>
             )}
@@ -2049,13 +2049,16 @@ function CensorMatchItem({
   onApply: () => void;
 }) {
   return (
-    <div className="space-y-2 rounded bg-editor-surface px-3 py-2 text-xs">
+    <div className="scriptcut-review-row space-y-2 px-4 py-3 text-xs">
       <div className="flex items-center justify-between gap-2">
         <div>
           <div className="font-medium text-editor-text">“{match.text}”</div>
           <div className="text-[10px] text-editor-text-muted">
             {formatClipTime(match.startTime)} – {formatClipTime(match.endTime)}
             {' '}· {match.source === 'built-in' ? 'встроенный словарь' : 'ваш список'}
+          </div>
+          <div className="mt-0.5 text-[10px] text-editor-text-muted">
+            {match.reason} · {Math.round(match.confidence * 100)}%
           </div>
         </div>
         {alreadyApplied && (

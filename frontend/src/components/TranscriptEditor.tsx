@@ -17,6 +17,7 @@ export default function TranscriptEditor() {
   const selectedWordIndices = useEditorStore((s) => s.selectedWordIndices);
   const hoveredWordIndex = useEditorStore((s) => s.hoveredWordIndex);
   const activeWordIndex = useEditorStore((s) => s.activeWordIndex);
+  const language = useEditorStore((s) => s.language);
   const setSelectedWordIndices = useEditorStore((s) => s.setSelectedWordIndices);
   const setHoveredWordIndex = useEditorStore((s) => s.setHoveredWordIndex);
   const deleteSelectedWords = useEditorStore((s) => s.deleteSelectedWords);
@@ -331,14 +332,36 @@ export default function TranscriptEditor() {
     (index: number) => {
       const segment = visibleSegments[index]?.segment;
       if (!segment) return null;
+      const segmentStartIndex = segment.globalStartIndex ?? 0;
+      const segmentEndIndex = segmentStartIndex + Math.max(0, segment.words.length - 1);
+      const rowIsActive =
+        (activeWordIndex >= segmentStartIndex && activeWordIndex <= segmentEndIndex) ||
+        selectedWordIndices.some(
+          (wordIndex) => wordIndex >= segmentStartIndex && wordIndex <= segmentEndIndex,
+        );
+      const averageConfidence = segment.words.length
+        ? segment.words.reduce((total, word) => total + (word.confidence || 0), 0) / segment.words.length
+        : 0;
       return (
-        <div className="mb-3 px-4">
-          {segment.speaker && (
-            <div className="text-xs text-editor-accent font-medium mb-1">
-              {segment.speaker}
-            </div>
-          )}
-          <p className="text-sm leading-relaxed flex flex-wrap">
+        <div
+          className="scriptcut-transcript-row grid grid-cols-[3.75rem_minmax(0,1fr)_3rem] gap-3 px-4 py-3"
+          data-active={rowIsActive ? 'true' : 'false'}
+        >
+          <button
+            type="button"
+            onClick={() => requestSeek(segment.start, 'forward', false)}
+            className="self-start pt-1 text-left font-mono text-[10px] text-editor-text-muted hover:text-editor-accent"
+            title="Перейти к началу реплики"
+          >
+            {formatTranscriptTime(segment.start)}
+          </button>
+          <div className="min-w-0">
+            {segment.speaker && (
+              <div className="mb-1 text-[10px] font-medium text-editor-accent">
+                {segment.speaker}
+              </div>
+            )}
+            <p className="flex flex-wrap text-[13px] leading-6">
             {segment.words.map((word, localIndex) => {
               const globalIndex = (segment.globalStartIndex ?? 0) + localIndex;
               if (speakerFilter !== 'all' && word.speaker !== speakerFilter) return null;
@@ -361,14 +384,17 @@ export default function TranscriptEditor() {
                   key={globalIndex}
                   id={`word-${globalIndex}`}
                   data-word-index={globalIndex}
+                  title={`${word.word} · ${Math.round((word.confidence || 0) * 100)}% · ${formatTranscriptTime(word.start)}`}
                   onMouseDown={(e) => handleWordMouseDown(globalIndex, e)}
                   onMouseEnter={() => handleWordMouseEnter(globalIndex)}
                   onMouseLeave={() => setHoveredWordIndex(null)}
+                  data-selected={isSelected ? 'true' : 'false'}
+                  data-confidence={word.confidence < 0.65 ? 'low' : 'normal'}
                   className={`
-                    relative px-[2px] py-[1px] rounded cursor-pointer transition-colors
+                    scriptcut-word-handle relative mb-0.5 mr-0.5 inline-block cursor-pointer px-1 py-0.5 transition-colors
                     ${isDeleted ? 'line-through text-editor-text-muted/40 bg-editor-word-deleted' : ''}
                     ${isMuted && !isDeleted ? 'bg-editor-accent/10 text-editor-accent' : ''}
-                    ${isBleep && !isDeleted && !isMuted ? 'bg-pink-500/15 text-pink-300' : ''}
+                    ${isBleep && !isDeleted && !isMuted ? 'bg-editor-danger/10 text-editor-danger' : ''}
                     ${isRoomTone && !isDeleted && !isMuted && !isBleep ? 'bg-editor-warning/10 text-editor-warning' : ''}
                     ${isCaptionHidden && !isDeleted && !isMuted && !isBleep && !isRoomTone ? 'bg-editor-border/70 text-editor-text-muted' : ''}
                     ${isSelected && !isDeleted ? 'bg-editor-word-selected text-white' : ''}
@@ -378,16 +404,16 @@ export default function TranscriptEditor() {
                     ${isHovered && !isDeleted && !isSelected && !isActive && !isMuted && !isBleep && !isRoomTone && !isCaptionHidden ? 'bg-editor-word-hover' : ''}
                   `}
                 >
-                  {word.word}{' '}
+                  {word.word}
                   {isDeleted && isHovered && deletedRange && (
                     <button
                       onClick={(e) => {
                         e.stopPropagation();
                         restoreRange(deletedRange.id);
                       }}
-                      className="absolute -top-5 left-1/2 -translate-x-1/2 flex items-center gap-0.5 px-1.5 py-0.5 bg-editor-surface border border-editor-border rounded text-[10px] text-editor-success whitespace-nowrap z-10"
+                      className="absolute -top-6 left-1/2 z-10 flex -translate-x-1/2 items-center gap-0.5 whitespace-nowrap border border-editor-border bg-editor-surface px-1.5 py-0.5 text-[10px] text-editor-success"
                     >
-                      <RotateCcw className="w-2.5 h-2.5" /> Restore
+                      <RotateCcw className="w-2.5 h-2.5" /> Вернуть
                     </button>
                   )}
                   {!isDeleted && isHovered && operation && (
@@ -396,29 +422,44 @@ export default function TranscriptEditor() {
                         e.stopPropagation();
                         restoreEditOperation(operation.id);
                       }}
-                      className="absolute -top-5 left-1/2 -translate-x-1/2 flex items-center gap-0.5 px-1.5 py-0.5 bg-editor-surface border border-editor-border rounded text-[10px] text-editor-success whitespace-nowrap z-10"
+                      className="absolute -top-6 left-1/2 z-10 flex -translate-x-1/2 items-center gap-0.5 whitespace-nowrap border border-editor-border bg-editor-surface px-1.5 py-0.5 text-[10px] text-editor-success"
                     >
                       <RotateCcw className="w-2.5 h-2.5" />
-                      Restore {operation.kind === 'mute' ? 'mute' : operation.kind === 'bleep' ? 'bleep' : operation.kind === 'caption-only' ? 'caption' : operation.kind === 'room-tone' ? 'room tone' : 'speaker'}
+                      Вернуть эффект
                     </button>
                   )}
                 </span>
               );
             })}
-          </p>
+            </p>
+          </div>
+          <div className="self-start pt-1 text-right font-mono text-[9px] text-editor-text-muted">
+            {Math.round(averageConfidence * 100)}%
+          </div>
         </div>
       );
     },
-    [visibleSegments, speakerFilter, deletedSet, selectedSet, operationMap, searchMatchWordMap, activeSearchIndex, activeWordIndex, hoveredWordIndex, handleWordMouseDown, handleWordMouseEnter, setHoveredWordIndex, getRangeForWord, restoreRange, restoreEditOperation],
+    [visibleSegments, speakerFilter, deletedSet, selectedSet, selectedWordIndices, operationMap, searchMatchWordMap, activeSearchIndex, activeWordIndex, hoveredWordIndex, handleWordMouseDown, handleWordMouseEnter, requestSeek, setHoveredWordIndex, getRangeForWord, restoreRange, restoreEditOperation],
   );
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
+      <div className="flex items-end justify-between gap-4 border-b border-editor-border px-5 pb-3 pt-4 shrink-0">
+        <div>
+          <h1 className="text-[1.35rem] font-medium tracking-[-0.025em] text-editor-text">
+            Smart Transcript
+          </h1>
+          <p className="mt-1 text-[10px] text-editor-text-muted">
+            {language === 'ru' ? 'Русский' : language || 'Авто'} · тайминги каждого слова · изменения обратимы
+          </p>
+        </div>
+        <div className="text-right text-[10px] leading-4 text-editor-text-muted">
+          <div>{visibleWordCount.toLocaleString('ru-RU')} слов</div>
+          <div>{deletedRanges.length} вырезано · {nonDeleteLayerCount} эффектов</div>
+        </div>
+      </div>
       <div className="flex flex-wrap items-center gap-2 px-4 py-2 border-b border-editor-border shrink-0">
-        <span className="text-xs text-editor-text-muted mr-auto">
-          {visibleWordCount} words &middot; {deletedRanges.length} cuts &middot; {nonDeleteLayerCount} layers
-        </span>
-        <div className="flex min-w-[16rem] items-center gap-1 rounded border border-editor-border bg-editor-surface px-2 py-1">
+        <div className="mr-auto flex min-w-[16rem] max-w-sm flex-1 items-center gap-1 rounded border border-editor-border bg-editor-surface px-2 py-1">
           <Search className="h-3.5 w-3.5 text-editor-text-muted" />
           <input
             value={searchQuery}
@@ -429,7 +470,7 @@ export default function TranscriptEditor() {
                 activateSearchResult(event.shiftKey ? activeSearchIndex - 1 : activeSearchIndex);
               }
             }}
-            placeholder="Search transcript"
+            placeholder="Поиск по расшифровке"
             className="min-w-0 flex-1 bg-transparent text-xs text-editor-text placeholder:text-editor-text-muted/50 focus:outline-none"
           />
           {searchQuery && (
@@ -441,7 +482,7 @@ export default function TranscriptEditor() {
                 onClick={() => activateSearchResult(activeSearchIndex - 1)}
                 disabled={searchMatches.length === 0}
                 className="rounded p-0.5 text-editor-text-muted hover:bg-editor-bg disabled:opacity-40"
-                title="Previous result"
+                title="Предыдущий результат"
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
               </button>
@@ -449,7 +490,7 @@ export default function TranscriptEditor() {
                 onClick={() => activateSearchResult(activeSearchIndex + 1)}
                 disabled={searchMatches.length === 0}
                 className="rounded p-0.5 text-editor-text-muted hover:bg-editor-bg disabled:opacity-40"
-                title="Next result"
+                title="Следующий результат"
               >
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
@@ -513,12 +554,12 @@ export default function TranscriptEditor() {
       </div>
 
       {selectionSummary && (
-        <div className="border-b border-editor-border bg-editor-surface/80 px-4 py-3 shrink-0">
+        <div className="border-b border-editor-border bg-editor-surface px-4 py-3 shrink-0">
           <div className="flex flex-wrap items-center gap-2">
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-2 text-[11px] text-editor-text-muted">
                 <span className="font-medium text-editor-text">
-                  {selectionSummary.indices.length} words selected
+                  Выбрано: {selectionSummary.indices.length} слов
                 </span>
                 <span>{formatSelectionDuration(selectionSummary.duration)}</span>
                 <span>
@@ -534,32 +575,32 @@ export default function TranscriptEditor() {
               className="flex items-center gap-1 rounded bg-editor-accent/20 px-2 py-1 text-xs text-editor-accent hover:bg-editor-accent/30"
             >
               <Play className="w-3 h-3" />
-              Preview
+              Прослушать
             </button>
             <button
               onClick={copySelectionText}
               className="flex items-center gap-1 rounded bg-editor-border px-2 py-1 text-xs text-editor-text-muted hover:bg-editor-bg"
             >
               <Copy className="w-3 h-3" />
-              Copy text
+              Копировать
             </button>
             <button
               onClick={draftClipFromSelection}
               className="flex items-center gap-1 rounded bg-editor-success/20 px-2 py-1 text-xs text-editor-success hover:bg-editor-success/30"
             >
               <Film className="w-3 h-3" />
-              Draft clip
+              Создать клип
             </button>
             <button
               onClick={() => setSelectedWordIndices([])}
               className="flex items-center gap-1 rounded bg-editor-border px-2 py-1 text-xs text-editor-text-muted hover:bg-editor-bg"
             >
               <X className="w-3 h-3" />
-              Clear
+              Снять выделение
             </button>
           </div>
           <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-editor-border/70 pt-2">
-            <span className="text-[10px] font-medium uppercase text-editor-text-muted">Trim to words</span>
+            <span className="text-[10px] font-medium text-editor-text-muted">Границы выделения</span>
             <div className="flex items-center rounded border border-editor-border bg-editor-bg">
               <button
                 onClick={() => trimSelection('start', -1)}
@@ -568,7 +609,7 @@ export default function TranscriptEditor() {
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
               </button>
-              <span className="px-1 text-[10px] text-editor-text-muted">Start</span>
+              <span className="px-1 text-[10px] text-editor-text-muted">Начало</span>
               <button
                 onClick={() => trimSelection('start', 1)}
                 className="p-1 text-editor-text-muted hover:bg-editor-surface hover:text-editor-text"
@@ -585,7 +626,7 @@ export default function TranscriptEditor() {
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
               </button>
-              <span className="px-1 text-[10px] text-editor-text-muted">End</span>
+              <span className="px-1 text-[10px] text-editor-text-muted">Конец</span>
               <button
                 onClick={() => trimSelection('end', 1)}
                 className="p-1 text-editor-text-muted hover:bg-editor-surface hover:text-editor-text"
@@ -603,31 +644,31 @@ export default function TranscriptEditor() {
               onClick={hideSelectedWordsFromCaptions}
               className="flex items-center gap-1 rounded bg-editor-border px-2 py-1 text-[10px] text-editor-text-muted hover:bg-editor-bg"
             >
-              <CaptionsOff className="h-3 w-3" /> Hide captions
+              <CaptionsOff className="h-3 w-3" /> Скрыть из субтитров
             </button>
             <button
               onClick={muteSelectedWords}
               className="flex items-center gap-1 rounded bg-editor-accent/20 px-2 py-1 text-[10px] text-editor-accent hover:bg-editor-accent/30"
             >
-              <VolumeX className="h-3 w-3" /> Mute
+              <VolumeX className="h-3 w-3" /> Тишина
             </button>
             <button
               onClick={bleepSelectedWords}
               className="flex items-center gap-1 rounded bg-pink-500/15 px-2 py-1 text-[10px] text-pink-300 hover:bg-pink-500/25"
             >
-              <BellRing className="h-3 w-3" /> Bleep
+              <BellRing className="h-3 w-3" /> Запикать
             </button>
             <button
               onClick={replaceSelectedWordsWithRoomTone}
               className="flex items-center gap-1 rounded bg-editor-warning/10 px-2 py-1 text-[10px] text-editor-warning hover:bg-editor-warning/20"
             >
-              <Waves className="h-3 w-3" /> Room tone
+              <Waves className="h-3 w-3" /> Фоновый шум
             </button>
             <button
               onClick={deleteSelectedWords}
               className="flex items-center gap-1 rounded bg-editor-danger/20 px-2 py-1 text-[10px] text-editor-danger hover:bg-editor-danger/30"
             >
-              <Trash2 className="h-3 w-3" /> Cut
+              <Trash2 className="h-3 w-3" /> Вырезать
             </button>
             {selectionOperations.map((operation) => (
               <button

@@ -708,8 +708,7 @@ export default function ExportDialog() {
   }, [backendUrl, lastExportJobId, pollExportJob, setExporting]);
 
   return (
-    <div className="p-4 space-y-5">
-      <h3 className="text-sm font-semibold">Export Video</h3>
+    <div className="scriptcut-panel p-4 space-y-5">
 
       <div className="space-y-2 rounded border border-editor-border bg-editor-surface p-3">
         <div className="flex items-center justify-between gap-2">

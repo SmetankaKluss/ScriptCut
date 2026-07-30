@@ -56,12 +56,47 @@ export default function WaveformTimeline() {
     const width = rect.width;
     const height = rect.height;
     ctx.clearRect(0, 0, width, height);
+    const rulerHeight = 18;
+    const eventLaneHeight = 38;
+    const eventLaneTop = height - eventLaneHeight;
+    const markerLaneTop = eventLaneTop + 20;
+    const waveformTop = rulerHeight + 5;
+    const waveformHeight = Math.max(24, eventLaneTop - waveformTop - 5);
+    const waveformMid = waveformTop + waveformHeight / 2;
+
+    ctx.strokeStyle = '#252a27';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(0, rulerHeight + 0.5);
+    ctx.lineTo(width, rulerHeight + 0.5);
+    ctx.moveTo(0, eventLaneTop + 0.5);
+    ctx.lineTo(width, eventLaneTop + 0.5);
+    ctx.moveTo(0, markerLaneTop + 0.5);
+    ctx.lineTo(width, markerLaneTop + 0.5);
+    ctx.stroke();
+
+    const tickCount = Math.max(4, Math.min(12, Math.floor(width / 120)));
+    ctx.font = '9px SFMono-Regular, Cascadia Mono, monospace';
+    ctx.textBaseline = 'top';
+    ctx.fillStyle = '#7d867f';
+    ctx.strokeStyle = '#353b37';
+    ctx.beginPath();
+    for (let tick = 0; tick <= tickCount; tick++) {
+      const x = (tick / tickCount) * width;
+      const tickTime = (tick / tickCount) * timelineDuration;
+      ctx.moveTo(x, rulerHeight - 5);
+      ctx.lineTo(x, rulerHeight);
+      ctx.fillText(formatTimelineTime(tickTime), Math.min(width - 34, x + 3), 2);
+    }
+    ctx.stroke();
 
     for (const range of deletedRanges) {
       const x1 = (range.start / timelineDuration) * width;
       const x2 = (range.end / timelineDuration) * width;
-      ctx.fillStyle = 'rgba(239, 68, 68, 0.15)';
-      ctx.fillRect(x1, 0, x2 - x1, height);
+      ctx.fillStyle = 'rgba(255, 113, 109, 0.16)';
+      ctx.fillRect(x1, waveformTop, x2 - x1, waveformHeight);
+      ctx.fillStyle = 'rgba(255, 113, 109, 0.7)';
+      ctx.fillRect(x1, eventLaneTop + 5, Math.max(2, x2 - x1), 8);
     }
 
     for (const operation of editOperations) {
@@ -69,15 +104,15 @@ export default function WaveformTimeline() {
       const x2 = (operation.end / timelineDuration) * width;
       ctx.fillStyle =
         operation.kind === 'mute'
-          ? 'rgba(99, 102, 241, 0.18)'
+          ? 'rgba(166, 174, 168, 0.18)'
           : operation.kind === 'bleep'
-            ? 'rgba(236, 72, 153, 0.22)'
+            ? 'rgba(255, 113, 109, 0.28)'
           : operation.kind === 'room-tone'
-            ? 'rgba(245, 158, 11, 0.18)'
+            ? 'rgba(231, 189, 99, 0.20)'
           : operation.kind === 'caption-only'
             ? 'rgba(148, 163, 184, 0.18)'
-            : 'rgba(34, 197, 94, 0.12)';
-      ctx.fillRect(x1, 0, x2 - x1, height);
+            : 'rgba(113, 217, 176, 0.13)';
+      ctx.fillRect(x1, eventLaneTop + 5, Math.max(2, x2 - x1), 8);
     }
 
     if (selectedWordIndices.length > 0 && words.length > 0) {
@@ -85,31 +120,48 @@ export default function WaveformTimeline() {
       for (const range of selectedRanges) {
         const x1 = (range.start / timelineDuration) * width;
         const x2 = (range.end / timelineDuration) * width;
-        ctx.fillStyle = 'rgba(99, 102, 241, 0.28)';
-        ctx.fillRect(x1, 0, Math.max(2, x2 - x1), height);
+        ctx.fillStyle = 'rgba(113, 217, 176, 0.28)';
+        ctx.fillRect(x1, waveformTop, Math.max(2, x2 - x1), waveformHeight);
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.45)';
         ctx.lineWidth = 1;
-        ctx.strokeRect(x1, 0.5, Math.max(2, x2 - x1), height - 1);
+        ctx.strokeRect(x1, waveformTop + 0.5, Math.max(2, x2 - x1), waveformHeight - 1);
+        ctx.fillStyle = '#71d9b0';
+        ctx.fillRect(x1, eventLaneTop + 5, Math.max(2, x2 - x1), 8);
+        ctx.beginPath();
+        ctx.arc(x1, markerLaneTop + 9, 3, 0, Math.PI * 2);
+        ctx.arc(x2, markerLaneTop + 9, 3, 0, Math.PI * 2);
+        ctx.fill();
       }
     }
 
-    const mid = height / 2;
+    for (const word of words) {
+      if (word.confidence >= 0.65) continue;
+      const x = (word.start / timelineDuration) * width;
+      ctx.fillStyle = '#ff716d';
+      ctx.beginPath();
+      ctx.moveTo(x, markerLaneTop + 4);
+      ctx.lineTo(x + 4, markerLaneTop + 9);
+      ctx.lineTo(x, markerLaneTop + 14);
+      ctx.lineTo(x - 4, markerLaneTop + 9);
+      ctx.closePath();
+      ctx.fill();
+    }
+
     ctx.beginPath();
-    ctx.strokeStyle = '#4a4d5e';
+    ctx.strokeStyle = '#69716b';
     ctx.lineWidth = 1;
 
     if (peaks.length === 0) {
-      ctx.moveTo(0, mid);
-      ctx.lineTo(width, mid);
+      ctx.moveTo(0, waveformMid);
+      ctx.lineTo(width, waveformMid);
       ctx.stroke();
 
       ctx.beginPath();
-      ctx.strokeStyle = '#2a2d3a';
-      const tickCount = Math.max(2, Math.min(12, Math.floor(timelineDuration / 10)));
+      ctx.strokeStyle = '#2b302d';
       for (let tick = 0; tick <= tickCount; tick++) {
         const x = (tick / tickCount) * width;
-        ctx.moveTo(x, height * 0.25);
-        ctx.lineTo(x, height * 0.75);
+        ctx.moveTo(x, waveformTop + waveformHeight * 0.25);
+        ctx.lineTo(x, waveformTop + waveformHeight * 0.75);
       }
       ctx.stroke();
       return;
@@ -118,8 +170,8 @@ export default function WaveformTimeline() {
     for (let index = 0; index < peaks.length; index++) {
       const x = peaks.length === 1 ? 0 : (index / (peaks.length - 1)) * width;
       const [minimum, maximum] = peaks[index];
-      const yMin = mid + minimum * mid * 0.9;
-      const yMax = mid + maximum * mid * 0.9;
+      const yMin = waveformMid + minimum * waveformHeight * 0.46;
+      const yMax = waveformMid + maximum * waveformHeight * 0.46;
       ctx.moveTo(x, yMin);
       ctx.lineTo(x, yMax);
     }
@@ -169,7 +221,7 @@ export default function WaveformTimeline() {
         console.warn('Could not build waveform:', err);
         waveformPeaksRef.current = [];
         waveformDurationRef.current = 0;
-        setAudioError('Waveform unavailable — editing and transcription still work');
+        setAudioError('Форма волны недоступна — монтаж и расшифровка продолжают работать');
         setWaveformRevision((revision) => revision + 1);
       } finally {
         if (!canceled) setWaveformLoading(false);
@@ -221,7 +273,7 @@ export default function WaveformTimeline() {
       if (dur > 0) {
         const px = (currentTimeRef.current / dur) * width;
         ctx.beginPath();
-        ctx.strokeStyle = '#6366f1';
+        ctx.strokeStyle = '#71d9b0';
         ctx.lineWidth = 2;
         ctx.moveTo(px, 0);
         ctx.lineTo(px, height);
@@ -337,7 +389,7 @@ export default function WaveformTimeline() {
   if (!videoPath) {
     return (
       <div className="w-full h-full flex items-center justify-center text-editor-text-muted text-xs">
-        Load a video to see the waveform
+        Откройте видео, чтобы увидеть форму волны
       </div>
     );
   }
@@ -345,8 +397,8 @@ export default function WaveformTimeline() {
   return (
     <div ref={containerRef} className="w-full h-full flex flex-col">
       <div className="flex items-center justify-between px-3 py-1 shrink-0">
-        <span className="text-[10px] text-editor-text-muted font-medium uppercase tracking-wider">
-          Timeline
+        <span className="text-[10px] text-editor-text-muted font-medium">
+          Звук · монтаж · цензура
         </span>
         <div className="flex items-center gap-1">
           <span className="mr-1 hidden font-mono text-[10px] text-editor-text-muted sm:inline">
@@ -355,7 +407,7 @@ export default function WaveformTimeline() {
           <button
             onClick={() => setFollowPlayhead((current) => !current)}
             className={`p-0.5 ${followPlayhead ? 'text-editor-accent' : 'text-editor-text-muted'} hover:text-editor-text`}
-            title={followPlayhead ? 'Following playhead' : 'Follow playhead'}
+            title={followPlayhead ? 'Следуем за курсором' : 'Следовать за курсором'}
           >
             <LocateFixed className="w-3.5 h-3.5" />
           </button>
@@ -363,14 +415,14 @@ export default function WaveformTimeline() {
             onClick={() => setZoom((current) => Math.max(1, current - 0.5))}
             disabled={zoom <= 1}
             className="p-0.5 text-editor-text-muted hover:text-editor-text"
-            title="Zoom out"
+            title="Уменьшить масштаб"
           >
             <ZoomOut className="w-3.5 h-3.5" />
           </button>
           <button
             onClick={() => setZoom((current) => Math.min(8, current + 0.5))}
             className="p-0.5 text-editor-text-muted hover:text-editor-text"
-            title="Zoom in"
+            title="Увеличить масштаб"
           >
             <ZoomIn className="w-3.5 h-3.5" />
           </button>
@@ -405,7 +457,7 @@ export default function WaveformTimeline() {
         )}
         {waveformLoading && !audioError && (
           <div className="pointer-events-none absolute inset-x-3 top-2 rounded bg-editor-bg/80 px-2 py-1 text-[10px] text-editor-text-muted">
-            Building a memory-safe waveform…
+            Строим безопасную форму волны…
           </div>
         )}
       </div>

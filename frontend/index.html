@@ -1,16 +1,21 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <link rel="icon" type="image/svg+xml" href="./brand/scriptcut-mark.svg" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; media-src 'self' file: blob: http://localhost:* http://127.0.0.1:*;" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self'; connect-src 'self' http://localhost:* http://127.0.0.1:* ws://localhost:* ws://127.0.0.1:*; media-src 'self' file: blob: http://localhost:* http://127.0.0.1:*;" />
     <title>ScriptCut</title>
   </head>
   <body class="bg-editor-bg text-editor-text antialiased">
+    <!--
+      THESIS: ScriptCut makes transcript words the handles of the video and refuses the timeline-first editor wall.
+      OWN-WORLD: black media stage, continuous paper transcript, graphite hairlines, one mint live signal, flat editorial controls.
+      STORY: open a VOD, watch Smart Transcript resolve it, edit and review from words, verify on waveform, export with confidence.
+      FIRST VIEWPORT: compact command bar; narrow video dock left; dominant transcript center; review workbench right; waveform below.
+      FORM: film-lab contact sheet, grounded direction 7, seed cd6bb4f0.
+      FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+    -->
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

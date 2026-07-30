@@ -1,0 +1,172 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-07-30T10:20:04Z",
+  "title": "Design System: ScriptCut",
+  "extensions": {
+    "colorMeta": {
+      "editor-bg": {
+        "role": "neutral",
+        "displayName": "Projection Black",
+        "canonical": "#0b0d0c",
+        "tonalRamp": ["#0b0d0c", "#171a18", "#2b302d", "#505852", "#747f78", "#a6aea8", "#d7dad5", "#f3f5f3"]
+      },
+      "editor-accent": {
+        "role": "primary",
+        "displayName": "Live Mint",
+        "canonical": "#71d9b0",
+        "tonalRamp": ["#08261b", "#0e422e", "#176b4c", "#23805b", "#41a77d", "#71d9b0", "#b5ecd6", "#edfbf5"]
+      },
+      "editor-paper": {
+        "role": "neutral",
+        "displayName": "Working Paper",
+        "canonical": "#f4f4ef",
+        "tonalRamp": ["#191a18", "#30322e", "#53574f", "#7d867f", "#aeb4ad", "#d7dad5", "#e9ebe6", "#f4f4ef"]
+      },
+      "editor-danger": {
+        "role": "tertiary",
+        "displayName": "Cut Red",
+        "canonical": "#ff716d",
+        "tonalRamp": ["#36100f", "#5b1b1a", "#812725", "#a02f2c", "#c84743", "#ff716d", "#ffaaa7", "#fff0ef"]
+      }
+    },
+    "typographyMeta": {
+      "headline": {
+        "displayName": "Editor Headline",
+        "purpose": "Sparse project and modal headings."
+      },
+      "transcript": {
+        "displayName": "Working Transcript",
+        "purpose": "The dominant editable speech surface."
+      },
+      "mono": {
+        "displayName": "Editorial Metadata",
+        "purpose": "Timecodes, confidence, durations, and ruler labels."
+      }
+    },
+    "shadows": [
+      {
+        "name": "overlay-only",
+        "value": "0 16px 48px rgba(0, 0, 0, 0.32)",
+        "purpose": "Reserved for temporary overlays; persistent editor regions remain flat."
+      }
+    ],
+    "motion": [
+      {
+        "name": "state-standard",
+        "value": "150ms ease",
+        "purpose": "Color, focus, selection, and progress state changes."
+      },
+      {
+        "name": "workbench-enter",
+        "value": "180ms cubic-bezier(0.16, 1, 0.3, 1)",
+        "purpose": "A 14px horizontal settle for the responsive review overlay."
+      }
+    ],
+    "breakpoints": [
+      {
+        "name": "workbench-overlay",
+        "value": "1180px"
+      },
+      {
+        "name": "compact-editor",
+        "value": "760px"
+      }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Export Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The mint terminal action for export and confirmed batch operations.",
+      "html": "<button class=\"ds-button-primary\">Экспорт</button>",
+      "css": ".ds-button-primary { height: 32px; padding: 0 12px; border: 1px solid #71d9b0; border-radius: 4px; background: #71d9b0; color: #08110d; font: 600 12px/1 'Onest Variable', 'Segoe UI', sans-serif; transition: background 150ms ease, border-color 150ms ease; } .ds-button-primary:hover { background: #8ee6c2; border-color: #8ee6c2; } .ds-button-primary:focus-visible { outline: 2px solid #71d9b0; outline-offset: 2px; } .ds-button-primary:active { background: #71d9b0; }"
+    },
+    {
+      "name": "Compact Dark Field",
+      "kind": "input",
+      "refersTo": "input-dark",
+      "description": "A compact workbench field for prompts, filters, and model settings.",
+      "html": "<label class=\"ds-field\"><span>Тема</span><input value=\"важные моменты стрима\"></label>",
+      "css": ".ds-field { display: grid; gap: 6px; color: #a6aea8; font: 500 11px/1 'Onest Variable', 'Segoe UI', sans-serif; } .ds-field input { min-height: 32px; padding: 6px 8px; border: 1px solid #2b302d; border-radius: 4px; background: #171a18; color: #f3f5f3; font: 400 12px/1.35 'Onest Variable', 'Segoe UI', sans-serif; } .ds-field input:hover { border-color: #505852; } .ds-field input:focus-visible { border-color: #71d9b0; outline: 2px solid #71d9b0; outline-offset: 2px; }"
+    },
+    {
+      "name": "Active Transcript Row",
+      "kind": "custom",
+      "refersTo": "transcript-row-active",
+      "description": "A timecoded paper record whose words act as direct video handles.",
+      "html": "<div class=\"ds-transcript-row\"><time>00:14</time><p><button>этот</button> <button class=\"ds-word-selected\">момент</button> <button>важный</button></p><output>96%</output></div>",
+      "css": ".ds-transcript-row { display: grid; grid-template-columns: 48px 1fr 40px; gap: 12px; align-items: start; padding: 12px 16px 12px 13px; border-bottom: 1px solid #d7dad5; border-left: 3px solid #23805b; background: rgba(35, 128, 91, 0.10); color: #111411; font: 400 13px/1.5rem 'Onest Variable', 'Segoe UI', sans-serif; } .ds-transcript-row time, .ds-transcript-row output { color: #677069; font: 400 10px/1.5rem 'SFMono-Regular', monospace; } .ds-transcript-row output { text-align: right; } .ds-transcript-row p { margin: 0; } .ds-transcript-row button { padding: 2px 4px; border: 1px solid transparent; border-radius: 3px; background: transparent; color: inherit; font: inherit; } .ds-transcript-row button:hover { border-color: rgba(35, 128, 91, 0.32); } .ds-transcript-row button:focus-visible { outline: 2px solid #71d9b0; outline-offset: 1px; } .ds-transcript-row .ds-word-selected { background: rgba(35, 128, 91, 0.22); }"
+    },
+    {
+      "name": "Censorship Review Row",
+      "kind": "custom",
+      "refersTo": "review-row",
+      "description": "A hairline-separated profanity match that stays visibly pending until confirmed.",
+      "html": "<article class=\"ds-review-row\"><div><strong>блять</strong><small>00:18.42 · 94% · точное</small></div><span>На проверке</span><button>Проверить</button><button class=\"ds-apply\">Применить</button></article>",
+      "css": ".ds-review-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto auto; gap: 8px; align-items: center; padding: 12px 16px; border-bottom: 1px solid #2b302d; background: #101311; color: #f3f5f3; font: 400 12px/1.35 'Onest Variable', 'Segoe UI', sans-serif; } .ds-review-row div { display: grid; gap: 3px; } .ds-review-row small, .ds-review-row span { color: #a6aea8; font: 400 10px/1.2 'SFMono-Regular', monospace; } .ds-review-row button { min-height: 28px; padding: 0 8px; border: 1px solid #2b302d; border-radius: 4px; background: #171a18; color: #f3f5f3; } .ds-review-row button:hover { border-color: #71d9b0; } .ds-review-row button:focus-visible { outline: 2px solid #71d9b0; outline-offset: 2px; } .ds-review-row .ds-apply { border-color: #71d9b0; color: #71d9b0; }"
+    },
+    {
+      "name": "Timeline Marker Lane",
+      "kind": "custom",
+      "refersTo": "timeline-marker-lane",
+      "description": "A compact lane aligning the selection, bleep event, and low-confidence marker to transcript time.",
+      "html": "<div class=\"ds-marker-lane\"><span class=\"ds-range\"></span><i class=\"ds-start\"></i><i class=\"ds-end\"></i><b class=\"ds-danger\"></b></div>",
+      "css": ".ds-marker-lane { position: relative; height: 28px; border-top: 1px solid #252a27; border-bottom: 1px solid #252a27; background: #0b0d0c; } .ds-marker-lane .ds-range { position: absolute; left: 22%; right: 31%; top: 12px; height: 2px; background: #71d9b0; } .ds-marker-lane i { position: absolute; top: 9px; width: 8px; height: 8px; border-radius: 9999px; background: #71d9b0; } .ds-marker-lane .ds-start { left: calc(22% - 4px); } .ds-marker-lane .ds-end { right: calc(31% - 4px); } .ds-marker-lane .ds-danger { position: absolute; left: 66%; top: 9px; width: 8px; height: 8px; background: #ff716d; transform: rotate(45deg); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Transcript Contact Sheet",
+    "overview": "ScriptCut treats a long recording like a film lab treats a contact sheet: the black media stage holds the source, while a continuous Working Paper transcript exposes every usable moment as editable evidence. The result is editorial, precise, local-first, and calm under long-form workload. It refuses the dense timeline-first editor wall; words are the primary handles of the video, and the waveform is their instrument of verification.\n\nThe visual world is built from Projection Black, Working Paper, Graphite Rule, and one Live Mint signal. Surfaces remain flat and tool-like. Hairlines, tonal fields, exact alignment, and tightly controlled type establish hierarchy; color and motion appear only when they communicate live position, selection, review, acceptance, or risk.",
+    "keyCharacteristics": [
+      "A black media stage beside a dominant, continuous paper transcript.",
+      "Dense but breathable editorial typography led by Onest and measured by compact monospace metadata.",
+      "Graphite hairlines and tonal fields instead of decorative cards or ambient elevation.",
+      "One mint live signal connecting transcript selection, playhead, accepted action, and primary export.",
+      "Reversible, reviewable controls that expose state without turning the editor into a dashboard."
+    ],
+    "rules": [
+      {
+        "name": "The One Live Signal Rule",
+        "body": "Live Mint is reserved for present position, selection, acceptance, focus, and the primary terminal action; it does not decorate passive surfaces.",
+        "section": "colors"
+      },
+      {
+        "name": "The Working Copy Rule",
+        "body": "Transcript text may breathe; interface text stays compact. Do not enlarge controls to compete with the words being edited.",
+        "section": "typography"
+      },
+      {
+        "name": "The Transcript Dominance Rule",
+        "body": "Preserve a legible media check and a usable waveform, but give the continuous transcript the largest uninterrupted working field.",
+        "section": "layout"
+      },
+      {
+        "name": "The Flat-by-Default Rule",
+        "body": "A persistent editor region never earns depth from a decorative shadow; use a hairline or a tonal field unless the surface is temporarily overlaying another one.",
+        "section": "elevation"
+      },
+      {
+        "name": "The Structural Edge Rule",
+        "body": "Round the control, not the canvas: never put the transcript, media stage, workbench, or timeline inside large-radius cards.",
+        "section": "shapes"
+      }
+    ],
+    "dos": [
+      "Do keep Working Paper as the largest light field and the transcript as the primary editing surface.",
+      "Do align selected words, active transcript rows, waveform ranges, and the playhead through the same Live Mint signal.",
+      "Do use 1px rules and tonal shifts to explain region boundaries before reaching for elevation.",
+      "Do keep timestamps, confidence, duration, and ruler labels in compact monospace.",
+      "Do show review, applied, deleted, warning, disabled, and low-confidence states with text or shape as well as color.",
+      "Do preserve a visible 2px Live Mint keyboard focus outline and reduced-motion behavior."
+    ],
+    "donts": [
+      "Don't turn the workspace into a grid of floating rounded cards.",
+      "Don't use Live Mint as decorative fill on passive regions or for unrelated secondary actions.",
+      "Don't replace the continuous transcript with a conventional timeline-first editing wall.",
+      "Don't hide deletions, censorship, AI suggestions, or confidence behind invisible automatic state.",
+      "Don't introduce gradients, ambient shadows, glass effects, or oversized display typography into the operational editor.",
+      "Don't let responsive behavior collapse the transcript merely to keep the review workbench permanently docked."
+    ]
+  }
+}

@@ -255,8 +255,7 @@ export default function SettingsPanel() {
   }, [backendUrl]);
 
   return (
-    <div className="p-4 space-y-6">
-      <h3 className="text-sm font-semibold">AI Settings</h3>
+    <div className="scriptcut-panel p-4 space-y-6">
 
       <div className="space-y-3 rounded-lg border border-editor-border bg-editor-surface p-3">
         <div className="flex items-start justify-between gap-3">

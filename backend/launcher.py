@@ -4,11 +4,25 @@ from __future__ import annotations
 
 import argparse
 import multiprocessing
+import os
 
 import uvicorn
 
 
+def configure_certificate_bundle() -> None:
+    """Give frozen HTTP clients an explicit, bundled CA path."""
+    try:
+        import certifi
+
+        certificate_bundle = certifi.where()
+        os.environ.setdefault("SSL_CERT_FILE", certificate_bundle)
+        os.environ.setdefault("REQUESTS_CA_BUNDLE", certificate_bundle)
+    except (ImportError, OSError):
+        pass
+
+
 def main() -> None:
+    configure_certificate_bundle()
     from main import app
 
     parser = argparse.ArgumentParser(description="ScriptCut local backend")

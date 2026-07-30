@@ -1,0 +1,8 @@
+{
+  "useCase": "ui-mockup",
+  "surface": "ScriptCut desktop editor",
+  "composition": "transcript-first three-column workspace with persistent review queue and bottom waveform",
+  "visualWorld": "Runway-inspired editorial restraint, black media stage, paper transcript, mint signal",
+  "approvalEvidence": "User delegated the choice; selected because transcript editing is ScriptCut's unique mechanism and the persistent review queue makes AI and censorship reversible.",
+  "approved": true
+}

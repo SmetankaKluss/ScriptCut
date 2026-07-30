@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import time
 import unittest
 import subprocess
@@ -76,6 +77,11 @@ class BackendSmokeTests(unittest.TestCase):
                 patch.object(transcription, "FASTER_WHISPER_AVAILABLE", True),
                 patch.object(
                     transcription,
+                    "_resolve_faster_whisper_model_source",
+                    return_value="/models/base",
+                ),
+                patch.object(
+                    transcription,
                     "WhisperModel",
                     side_effect=[RuntimeError("missing CUDA runtime"), fake_model],
                 ) as model_factory,
@@ -99,6 +105,11 @@ class BackendSmokeTests(unittest.TestCase):
             with (
                 patch.dict(sys.modules, {"ctranslate2": fake_ctranslate2}),
                 patch.object(transcription, "FASTER_WHISPER_AVAILABLE", True),
+                patch.object(
+                    transcription,
+                    "_resolve_faster_whisper_model_source",
+                    return_value="/models/base",
+                ),
                 patch.object(transcription, "WhisperModel", return_value=fake_model) as model_factory,
             ):
                 self.assertIs(
@@ -109,6 +120,58 @@ class BackendSmokeTests(unittest.TestCase):
                 self.assertEqual(model_factory.call_args.kwargs["compute_type"], "int8_float32")
         finally:
             transcription._model_cache.clear()
+
+    def test_faster_whisper_prefers_complete_local_snapshot_without_network(self) -> None:
+        with patch.object(
+            transcription,
+            "download_faster_whisper_model",
+            return_value="/cache/small",
+        ) as download:
+            source = transcription._resolve_faster_whisper_model_source("small")
+
+        self.assertEqual(source, "/cache/small")
+        download.assert_called_once_with("small", local_files_only=True)
+
+    def test_faster_whisper_model_download_retries_and_resumes(self) -> None:
+        progress: list[tuple[int, str]] = []
+        with (
+            patch.object(
+                transcription,
+                "download_faster_whisper_model",
+                side_effect=[
+                    RuntimeError("not cached"),
+                    ConnectionError("SSL EOF"),
+                    "/cache/small",
+                ],
+            ) as download,
+            patch.object(transcription.time, "sleep") as sleep,
+        ):
+            source = transcription._resolve_faster_whisper_model_source(
+                "small",
+                lambda percent, message: progress.append((percent, message)),
+            )
+
+        self.assertEqual(source, "/cache/small")
+        self.assertEqual(download.call_count, 3)
+        sleep.assert_called_once_with(1)
+        self.assertTrue(any("попытка 2 из 3" in message for _, message in progress))
+
+    def test_faster_whisper_model_download_uses_safe_russian_error(self) -> None:
+        with (
+            patch.object(
+                transcription,
+                "download_faster_whisper_model",
+                side_effect=ConnectionError("SSL EOF from private network details"),
+            ),
+            patch.object(transcription.time, "sleep"),
+        ):
+            with self.assertRaises(transcription.ModelDownloadError) as raised:
+                transcription._resolve_faster_whisper_model_source("small")
+
+        message = str(raised.exception)
+        self.assertIn("Не удалось скачать локальную модель речи", message)
+        self.assertIn("Повторить расшифровку", message)
+        self.assertNotIn("private network details", message)
 
     def test_faster_whisper_inference_float16_failure_retries_original_video_on_cpu(self) -> None:
         class FailingGpuModel:
@@ -158,7 +221,10 @@ class BackendSmokeTests(unittest.TestCase):
 
         self.assertEqual(result["words"][0]["word"], "hello")
         self.assertEqual(seen_paths, [str(video_path)])
-        self.assertEqual(load_model.call_args_list[1].args, ("base", "cpu", "faster-whisper"))
+        self.assertEqual(
+            load_model.call_args_list[1].args,
+            ("small", "cpu", "faster-whisper", None),
+        )
 
     def test_waveform_reduces_media_to_bounded_peak_count(self) -> None:
         pcm = array("h", [-32768, -12000, 0, 8000, 32767, -4000, 2000, 0]).tobytes()
@@ -403,7 +469,9 @@ class BackendSmokeTests(unittest.TestCase):
         )
 
         self.assertIn("volume=0:enable='between(t,1.000,1.800)'", filter_graph)
-        self.assertIn("sine=frequency=1000", filter_graph)
+        self.assertIn("sine=frequency=1050", filter_graph)
+        self.assertIn("afade=t=in", filter_graph)
+        self.assertIn("afade=t=out", filter_graph)
         self.assertIn("amix=inputs=2", filter_graph)
 
     def test_captions_hide_deleted_words(self) -> None:
@@ -450,12 +518,14 @@ class BackendSmokeTests(unittest.TestCase):
 
     def test_parakeet_auto_resolution_and_model_normalization(self) -> None:
         transcription = self._load_transcription_service_or_skip()
+        original_faster_whisper = transcription.FASTER_WHISPER_AVAILABLE
         original_nemo = transcription.NEMO_AVAILABLE
         original_whisperx = transcription.WHISPERX_AVAILABLE
         try:
+            transcription.FASTER_WHISPER_AVAILABLE = True
             transcription.NEMO_AVAILABLE = True
             transcription.WHISPERX_AVAILABLE = True
-            self.assertEqual(transcription._resolve_engine("auto"), "parakeet")
+            self.assertEqual(transcription._resolve_engine("auto"), "faster-whisper")
             self.assertEqual(
                 transcription._normalize_model_for_engine("base", "parakeet"),
                 transcription.PARAKEET_DEFAULT_MODEL,
@@ -465,6 +535,7 @@ class BackendSmokeTests(unittest.TestCase):
                 transcription.PARAKEET_DEFAULT_MODEL,
             )
         finally:
+            transcription.FASTER_WHISPER_AVAILABLE = original_faster_whisper
             transcription.NEMO_AVAILABLE = original_nemo
             transcription.WHISPERX_AVAILABLE = original_whisperx
 
@@ -525,6 +596,33 @@ class BackendSmokeTests(unittest.TestCase):
         )
         self.assertTrue(model.options["word_timestamps"])
         self.assertTrue(model.options["vad_filter"])
+        self.assertEqual(model.options["beam_size"], 5)
+        self.assertEqual(model.options["vad_parameters"]["speech_pad_ms"], 240)
+        self.assertIn("обсценные слова", model.options["initial_prompt"])
+        self.assertIn("пиздец", model.options["hotwords"])
+
+    def test_smart_transcript_selects_a_practical_model_for_device(self) -> None:
+        transcription = self._load_transcription_service_or_skip()
+
+        with patch.dict(os.environ, {}, clear=False):
+            os.environ.pop("SCRIPTCUT_SMART_TRANSCRIPTION_MODEL", None)
+            self.assertEqual(
+                transcription._normalize_model_for_engine("smart", "faster-whisper", "cpu"),
+                "small",
+            )
+            self.assertEqual(
+                transcription._normalize_model_for_engine("smart", "faster-whisper", "cuda"),
+                "large-v3-turbo",
+            )
+
+        with patch.dict(
+            os.environ,
+            {"SCRIPTCUT_SMART_TRANSCRIPTION_MODEL": "medium"},
+        ):
+            self.assertEqual(
+                transcription._normalize_model_for_engine("smart", "faster-whisper", "cpu"),
+                "medium",
+            )
 
     def test_system_checks_payload_covers_onboarding_requirements(self) -> None:
         import asyncio

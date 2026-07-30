@@ -5,14 +5,14 @@
       <path d="M430 210 L620 814" stroke="black" stroke-width="104" stroke-linecap="round"/>
     </mask>
   </defs>
-  <rect x="72" y="72" width="880" height="880" rx="224" fill="#0F1117"/>
-  <rect x="144" y="154" width="736" height="716" rx="128" fill="#1A1D27" stroke="#2A2D3A" stroke-width="12"/>
+  <rect x="72" y="72" width="880" height="880" rx="224" fill="#0B0D0C"/>
+  <rect x="144" y="154" width="736" height="716" rx="128" fill="#171A18" stroke="#2B302D" stroke-width="12"/>
   <g mask="url(#cutMask)" fill="#F8FAFC">
     <rect x="250" y="282" width="524" height="82" rx="41"/>
     <rect x="250" y="438" width="430" height="82" rx="41" opacity="0.92"/>
     <rect x="250" y="594" width="524" height="82" rx="41" opacity="0.82"/>
   </g>
-  <path d="M430 210 L620 814" stroke="#6366F1" stroke-width="66" stroke-linecap="round"/>
-  <circle cx="430" cy="210" r="34" fill="#818CF8"/>
-  <circle cx="620" cy="814" r="34" fill="#818CF8"/>
+  <path d="M430 210 L620 814" stroke="#71D9B0" stroke-width="66" stroke-linecap="round"/>
+  <circle cx="430" cy="210" r="34" fill="#8EE6C2"/>
+  <circle cx="620" cy="814" r="34" fill="#8EE6C2"/>
 </svg>
