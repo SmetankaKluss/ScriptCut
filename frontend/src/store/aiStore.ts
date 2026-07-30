@@ -20,6 +20,7 @@ const DEFAULT_PROVIDERS: Record<AIProvider, AIProviderConfig> = {
   openai: { provider: 'openai', apiKey: '', model: 'gpt-4o' },
   claude: { provider: 'claude', apiKey: '', model: 'claude-sonnet-4-20250514' },
   xai: { provider: 'xai', apiKey: '', baseUrl: 'https://api.x.ai/v1', model: 'grok-4.5' },
+  codex: { provider: 'codex', baseUrl: '', model: 'gpt-5.6-luna' },
   '9router': { provider: '9router', apiKey: '', baseUrl: 'http://localhost:20128/v1', model: 'gpt-4o' },
 };
 
@@ -230,6 +231,7 @@ export const useAIStore = create<AIState & AIActions>()(
           openai: { ...state.providers.openai, apiKey: '' },
           claude: { ...state.providers.claude, apiKey: '' },
           xai: { ...state.providers.xai, apiKey: '' },
+          codex: { ...state.providers.codex, apiKey: undefined },
           '9router': { ...state.providers['9router'], apiKey: '' },
         },
         defaultProvider: state.defaultProvider,

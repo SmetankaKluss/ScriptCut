@@ -126,6 +126,7 @@ const AI_PROVIDER_LABELS = {
   openai: 'OpenAI',
   claude: 'Claude',
   xai: 'Grok (xAI)',
+  codex: 'Codex account',
   '9router': '9router',
 } as const;
 

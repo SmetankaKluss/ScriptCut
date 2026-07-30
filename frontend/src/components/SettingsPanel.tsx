@@ -2,18 +2,19 @@ import { useAIStore } from '../store/aiStore';
 import { useState, useEffect, useCallback } from 'react';
 import type { AIProvider, AIProviderConnectionCheck } from '../types/project';
 import { useEditorStore } from '../store/editorStore';
-import { Bot, Cloud, Brain, Sparkles, RefreshCw, Route, ShieldCheck, Copy, CheckCircle2, AlertCircle, Download, ExternalLink, MonitorCheck } from 'lucide-react';
+import { Bot, Cloud, Brain, Sparkles, RefreshCw, Route, ShieldCheck, Copy, CheckCircle2, AlertCircle, Download, ExternalLink, MonitorCheck, TerminalSquare } from 'lucide-react';
 import { RELEASE_LINKS, SCRIPTCUT_VERSION } from '../utils/releaseInfo';
 import { buildSupportReport } from '../utils/supportReport';
 
-const AI_PROVIDERS: AIProvider[] = ['ollama', 'openai', 'claude', 'xai', '9router'];
-type TestableCloudProvider = 'openai' | 'xai';
+const AI_PROVIDERS: AIProvider[] = ['ollama', 'openai', 'claude', 'xai', 'codex', '9router'];
+type TestableCloudProvider = 'openai' | 'xai' | 'codex';
 
 const providerLabels: Record<AIProvider, string> = {
   ollama: 'Ollama',
   openai: 'OpenAI',
   claude: 'Claude',
   xai: 'Grok',
+  codex: 'Codex account',
   '9router': '9router',
 };
 
@@ -158,6 +159,7 @@ export default function SettingsPanel() {
     openai: <Cloud className="w-4 h-4" />,
     claude: <Brain className="w-4 h-4" />,
     xai: <Sparkles className="w-4 h-4" />,
+    codex: <TerminalSquare className="w-4 h-4" />,
     '9router': <Route className="w-4 h-4" />,
   };
 
@@ -192,6 +194,15 @@ export default function SettingsPanel() {
           : providers.xai.apiKey
             ? 'Key not tested'
             : 'Needs key',
+      local: false,
+    },
+    codex: {
+      ok: !!providerChecks.codex?.ok,
+      label: providerChecks.codex?.ok
+        ? 'ChatGPT login ready'
+        : providerChecks.codex
+          ? 'Codex setup needed'
+          : 'Not tested',
       local: false,
     },
     '9router': {
@@ -301,15 +312,16 @@ export default function SettingsPanel() {
         </div>
         <p className="text-[11px] leading-relaxed text-editor-text-muted">
           Media files, project files, waveform data, and exports stay on this machine. Transcript
-          text is sent only when you run AI actions with a cloud provider. Ollama and 9router can
-          run against local endpoints.
+          text is sent only when you run AI actions with a cloud provider. Codex account sends
+          transcript text through your local Codex CLI and ChatGPT plan. Ollama and 9router can run
+          against local endpoints.
         </p>
       </div>
 
       {/* Default provider selector */}
       <div className="space-y-2">
         <label className="text-xs text-editor-text-muted font-medium">Default AI Provider</label>
-        <div className="grid grid-cols-5 gap-1.5">
+        <div className="grid grid-cols-3 gap-1.5 sm:grid-cols-6">
           {AI_PROVIDERS.map((p) => (
             <button
               key={p}
@@ -496,6 +508,51 @@ export default function SettingsPanel() {
         </ProviderNote>
       </ProviderSection>
 
+      {/* Codex account settings */}
+      <ProviderSection title="Codex account (ChatGPT plan)" icon={providerIcons.codex}>
+        <ProviderNote>
+          Uses the official local Codex CLI and its saved ChatGPT login. No OpenAI API key is read
+          or stored by ScriptCut. Transcript text is still sent to OpenAI and counts against your
+          Codex plan limits.
+        </ProviderNote>
+        <CloudConnectionControls
+          active={defaultProvider === 'codex'}
+          loading={checkingCloudProvider === 'codex'}
+          status={providerChecks.codex}
+          providerLabel="Codex account"
+          onActivate={() => setDefaultProvider('codex')}
+          onTest={() => void checkCloudProvider('codex')}
+        />
+        <InputField
+          label="Codex executable path (optional)"
+          value={providers.codex.baseUrl || ''}
+          onChange={(v) => updateCloudConfig('codex', { baseUrl: v })}
+          placeholder="Auto-detect from ChatGPT/Codex app or PATH"
+        />
+        <InputField
+          label="Model"
+          value={providers.codex.model}
+          onChange={(v) => updateCloudConfig('codex', { model: v })}
+          placeholder="gpt-5.6-luna"
+          suggestions={providerChecks.codex?.models || [
+            'gpt-5.6-luna',
+            'gpt-5.6-terra',
+            'gpt-5.6-sol',
+          ]}
+        />
+        {!providerChecks.codex?.ok && (
+          <SetupCommands
+            commands={['codex login status', 'codex login']}
+            copiedCommand={copiedCommand}
+            onCopy={copyCommand}
+          />
+        )}
+        <ProviderNote>
+          Luna is recommended for repeated extraction and classification. Pro includes higher Codex
+          limits, but plan usage is not unlimited and can pause after the allowance is reached.
+        </ProviderNote>
+      </ProviderSection>
+
       {/* 9router settings */}
       <ProviderSection title="9router" icon={providerIcons['9router']}>
         <ProviderNote>Uses the configured 9router-compatible endpoint; local endpoints keep traffic local.</ProviderNote>
@@ -585,7 +642,7 @@ function CloudConnectionControls({
   active: boolean;
   loading: boolean;
   status?: AIProviderConnectionCheck;
-  keyUrl: string;
+  keyUrl?: string;
   providerLabel: string;
   onActivate: () => void;
   onTest: () => void;
@@ -627,15 +684,17 @@ function CloudConnectionControls({
           {status.message}
         </div>
       )}
-      <a
-        href={keyUrl}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex items-center gap-1 text-[10px] text-editor-accent hover:underline"
-      >
-        <ExternalLink className="h-3 w-3" />
-        Create or manage API key
-      </a>
+      {keyUrl && (
+        <a
+          href={keyUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="inline-flex items-center gap-1 text-[10px] text-editor-accent hover:underline"
+        >
+          <ExternalLink className="h-3 w-3" />
+          Create or manage API key
+        </a>
+      )}
     </div>
   );
 }

@@ -25,6 +25,7 @@ Both include the backend and FFmpeg. See
 - Python 3.10, 3.11, or 3.12
 - FFmpeg available in `PATH`
 - Optional: Ollama for local AI features
+- Optional: official Codex CLI signed in with ChatGPT for subscription-backed AI features
 
 Python 3.11 is the recommended development runtime. Python 3.13 is not supported by the current transcription dependency stack.
 
