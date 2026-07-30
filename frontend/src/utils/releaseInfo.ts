@@ -1,4 +1,4 @@
-export const SCRIPTCUT_VERSION = '0.1.3';
+export const SCRIPTCUT_VERSION = '0.1.4';
 
 export const RELEASE_LINKS = {
   latestRelease: 'https://github.com/SmetankaKluss/ScriptCut/releases/latest',

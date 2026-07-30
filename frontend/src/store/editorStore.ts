@@ -336,11 +336,14 @@ export const useEditorStore = create<EditorState & EditorActions>()(
         let prev = sorted[0];
 
         const flush = () => {
+          const edgePadding = kind === 'bleep'
+            ? { before: 0.08, after: 0.12 }
+            : { before: 0, after: 0 };
           ranges.push({
             id: `op_${nextRangeId++}`,
             kind,
-            start: words[start].start,
-            end: words[prev].end,
+            start: Math.max(0, words[start].start - edgePadding.before),
+            end: words[prev].end + edgePadding.after,
             wordIndices: Array.from({ length: prev - start + 1 }, (_, i) => start + i),
           });
         };

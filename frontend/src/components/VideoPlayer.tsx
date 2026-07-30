@@ -77,7 +77,7 @@ export default function VideoPlayer() {
 
   return (
     <div className="w-full h-full flex flex-col">
-      <div className="flex-1 relative flex items-center justify-center bg-black rounded-lg overflow-hidden min-h-0">
+      <div className="flex-1 relative flex items-center justify-center bg-black rounded overflow-hidden min-h-0">
         <video
           ref={videoRef}
           src={videoUrl}
@@ -112,16 +112,16 @@ export default function VideoPlayer() {
         )}
       </div>
 
-      <div className="pt-2 space-y-1.5 shrink-0">
+      <div className="pt-3 space-y-2 shrink-0">
         <div
-          className="h-1.5 bg-editor-border rounded-full cursor-pointer group"
+          className="h-1 bg-editor-border cursor-pointer group"
           onClick={handleProgressClick}
         >
           <div
-            className="h-full bg-editor-accent rounded-full relative transition-all group-hover:h-2"
+            className="h-full bg-editor-accent relative transition-all"
             style={{ width: `${playbackState.progress * 100}%` }}
           >
-            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
+            <div className="absolute right-0 top-1/2 -translate-y-1/2 w-2.5 h-2.5 bg-editor-accent rounded-full opacity-0 group-hover:opacity-100 transition-opacity" />
           </div>
         </div>
 
@@ -183,9 +183,9 @@ function ControlButton({
       onClick={onClick}
       title={title}
       disabled={disabled}
-      className={`p-1.5 rounded-md transition-colors ${
+      className={`flex h-8 w-8 items-center justify-center rounded transition-colors ${
         primary
-          ? 'bg-editor-accent/20 text-editor-accent hover:bg-editor-accent/30'
+          ? 'bg-editor-paper text-editor-ink hover:bg-white'
           : active
             ? 'bg-editor-accent/15 text-editor-accent hover:bg-editor-accent/25'
           : 'text-editor-text-muted hover:text-editor-text hover:bg-editor-surface'

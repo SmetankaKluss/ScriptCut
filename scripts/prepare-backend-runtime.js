@@ -36,6 +36,7 @@ const collectPackages = [
   'faster_whisper',
   'tokenizers',
   'av',
+  'certifi',
 ];
 const collectBinaryDataPackages = ['ctranslate2'];
 const hiddenImports = [

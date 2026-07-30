@@ -26,6 +26,12 @@
 - Subscription-login verification that refuses accidental API-key billing
 - Sandboxed, ephemeral Codex transcript analysis with Luna as the default
 
+## v0.1.4
+
+- Smart Transcript with device-aware Faster Whisper models and Russian decoding hints
+- Morphology-aware Russian censorship for disguised, stretched, and split profanity
+- Transcript-first Runway-inspired editing workspace with clearer first-run guidance
+
 ## v0.2.0
 
 - Better AI clipping workflow

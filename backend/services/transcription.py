@@ -3,17 +3,47 @@
 from __future__ import annotations
 
 import logging
+import os
+import threading
+import time
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Callable, Literal, Optional
 
 from utils.cache import load_from_cache, save_to_cache
 
 logger = logging.getLogger(__name__)
 
 _model_cache: dict = {}
+_model_cache_lock = threading.RLock()
 TranscriptionEngine = Literal["faster-whisper", "whisperx", "whisper", "parakeet", "auto"]
 PARAKEET_DEFAULT_MODEL = "nvidia/parakeet-tdt-0.6b-v3"
-WHISPER_MODEL_NAMES = {"tiny", "base", "small", "medium", "large"}
+SMART_MODEL_NAME = "smart"
+WHISPER_MODEL_NAMES = {
+    "tiny",
+    "base",
+    "small",
+    "medium",
+    "large",
+    "large-v3",
+    "large-v3-turbo",
+    "turbo",
+    SMART_MODEL_NAME,
+}
+
+# Whisper occasionally replaces or drops profanity because the acoustic signal is
+# short, clipped, or masked by game audio. Faster Whisper's hotword support is a
+# decoding hint, not a post-processing replacement: the audio still has to support
+# the word. Keeping the list compact reduces unrelated hallucinations.
+RUSSIAN_PROFANITY_HOTWORDS = (
+    "блядь блять бля сука сучка хуй хуево хуёво хуевый охуеть охуенно "
+    "нахуй похуй пизда пиздец пиздеть пиздатый ебать ебаный ёбаный "
+    "ебучий заебал заебись наебал проебал уебок долбоеб мудак мудила "
+    "гандон гондон пидор пидорас"
+)
+RUSSIAN_CONTEXT_PROMPT = (
+    "Разговорный стрим на русском языке. Сохраняй разговорную лексику дословно, "
+    "включая обсценные слова, имена, игровые термины и самокоррекции."
+)
 
 try:
     import torch
@@ -26,9 +56,11 @@ except ImportError:
 
 try:
     from faster_whisper import WhisperModel
+    from faster_whisper.utils import download_model as download_faster_whisper_model
     FASTER_WHISPER_AVAILABLE = True
 except ImportError:
     WhisperModel = None
+    download_faster_whisper_model = None
     FASTER_WHISPER_AVAILABLE = False
 
 try:
@@ -74,45 +106,104 @@ def _get_device(use_gpu: bool = True) -> str:
     return "cpu"
 
 
-def _load_model(model_name: str, device: str, engine: TranscriptionEngine):
-    cache_key = f"{engine}_{model_name}_{device}"
-    if cache_key in _model_cache:
-        return _model_cache[cache_key]
+class ModelDownloadError(RuntimeError):
+    """A safe, localized error for the first speech-model download."""
 
-    logger.info(f"Loading {engine} model: {model_name} on {device}")
-    if engine == "parakeet":
-        model = _load_parakeet_model(model_name, device)
-    elif engine == "faster-whisper" and FASTER_WHISPER_AVAILABLE:
-        faster_device = "cuda" if device.startswith("cuda") else "cpu"
-        compute_type = _select_faster_whisper_compute_type(faster_device)
-        try:
-            model = WhisperModel(model_name, device=faster_device, compute_type=compute_type)
-        except (RuntimeError, ValueError) as error:
-            if faster_device != "cuda":
-                raise
-            logger.warning("CUDA Faster Whisper initialization failed; falling back to CPU: %s", error)
-            model = WhisperModel(
-                model_name,
-                device="cpu",
-                compute_type=_select_faster_whisper_compute_type("cpu"),
+
+def _resolve_faster_whisper_model_source(
+    model_name: str,
+    progress_callback: Optional[Callable[[int, str], None]] = None,
+) -> str:
+    """Prefer a complete local snapshot, then retry the resumable Hub download."""
+    if download_faster_whisper_model is None:
+        return model_name
+
+    try:
+        local_path = download_faster_whisper_model(model_name, local_files_only=True)
+        if progress_callback:
+            progress_callback(8, "Локальная модель речи готова")
+        return str(local_path)
+    except Exception:
+        # A missing local snapshot is normal on first use. The online attempts
+        # below reuse any partial Hugging Face blobs instead of starting over.
+        pass
+
+    last_error: Optional[Exception] = None
+    for attempt in range(1, 4):
+        if progress_callback:
+            progress_callback(
+                8 + attempt,
+                f"Скачиваем модель речи: попытка {attempt} из 3. "
+                "Прерванная загрузка продолжится автоматически.",
             )
-    elif engine == "whisperx" and WHISPERX_AVAILABLE:
-        whisperx_device = "cuda" if device.startswith("cuda") else "cpu"
-        compute_type = "float16" if whisperx_device == "cuda" else "int8"
-        model = whisperx.load_model(
-            model_name,
-            device=whisperx_device,
-            compute_type=compute_type,
-        )
-    elif engine in {"whisper", "auto"} and WHISPER_AVAILABLE:
-        model = whisper.load_model(model_name, device=device)
-    else:
-        raise RuntimeError(
-            "No requested transcription backend is installed. Install faster-whisper, WhisperX, openai-whisper, or Parakeet dependencies."
-        )
+        try:
+            return str(download_faster_whisper_model(model_name))
+        except ValueError:
+            raise
+        except Exception as error:
+            last_error = error
+            logger.warning(
+                "Faster Whisper model download attempt %s/3 failed: %s",
+                attempt,
+                error,
+            )
+            if attempt < 3:
+                time.sleep(attempt)
 
-    _model_cache[cache_key] = model
-    return model
+    raise ModelDownloadError(
+        "Не удалось скачать локальную модель речи после трёх попыток. "
+        "Проверьте подключение к интернету и нажмите «Повторить расшифровку». "
+        "Уже загруженная часть сохранена — скачивание продолжится с неё. "
+        "API-ключ для этого не нужен."
+    ) from last_error
+
+
+def _load_model(
+    model_name: str,
+    device: str,
+    engine: TranscriptionEngine,
+    progress_callback: Optional[Callable[[int, str], None]] = None,
+):
+    cache_key = f"{engine}_{model_name}_{device}"
+    with _model_cache_lock:
+        if cache_key in _model_cache:
+            return _model_cache[cache_key]
+
+        logger.info(f"Loading {engine} model: {model_name} on {device}")
+        if engine == "parakeet":
+            model = _load_parakeet_model(model_name, device)
+        elif engine == "faster-whisper" and FASTER_WHISPER_AVAILABLE:
+            faster_device = "cuda" if device.startswith("cuda") else "cpu"
+            compute_type = _select_faster_whisper_compute_type(faster_device)
+            model_source = _resolve_faster_whisper_model_source(model_name, progress_callback)
+            try:
+                model = WhisperModel(model_source, device=faster_device, compute_type=compute_type)
+            except (RuntimeError, ValueError) as error:
+                if faster_device != "cuda":
+                    raise
+                logger.warning("CUDA Faster Whisper initialization failed; falling back to CPU: %s", error)
+                model = WhisperModel(
+                    model_source,
+                    device="cpu",
+                    compute_type=_select_faster_whisper_compute_type("cpu"),
+                )
+        elif engine == "whisperx" and WHISPERX_AVAILABLE:
+            whisperx_device = "cuda" if device.startswith("cuda") else "cpu"
+            compute_type = "float16" if whisperx_device == "cuda" else "int8"
+            model = whisperx.load_model(
+                model_name,
+                device=whisperx_device,
+                compute_type=compute_type,
+            )
+        elif engine in {"whisper", "auto"} and WHISPER_AVAILABLE:
+            model = whisper.load_model(model_name, device=device)
+        else:
+            raise RuntimeError(
+                "No requested transcription backend is installed. Install faster-whisper, WhisperX, openai-whisper, or Parakeet dependencies."
+            )
+
+        _model_cache[cache_key] = model
+        return model
 
 
 def _select_faster_whisper_compute_type(device: str) -> str:
@@ -177,10 +268,10 @@ def _resolve_engine(engine: TranscriptionEngine) -> TranscriptionEngine:
                 "its selected model downloads automatically on first use."
             )
         return engine
-    if NEMO_AVAILABLE:
-        return "parakeet"
     if FASTER_WHISPER_AVAILABLE:
         return "faster-whisper"
+    if NEMO_AVAILABLE:
+        return "parakeet"
     if WHISPERX_AVAILABLE:
         return "whisperx"
     if WHISPER_AVAILABLE:
@@ -208,24 +299,33 @@ def _load_parakeet_model(model_name: str, device: str):
 def get_transcription_engine_status() -> dict:
     return {
         "default_engine": (
-            "parakeet"
-            if NEMO_AVAILABLE
-            else "faster-whisper"
+            "faster-whisper"
             if FASTER_WHISPER_AVAILABLE
+            else "parakeet"
+            if NEMO_AVAILABLE
             else "whisperx"
             if WHISPERX_AVAILABLE
             else "whisper"
             if WHISPER_AVAILABLE
             else None
         ),
-        "default_model": PARAKEET_DEFAULT_MODEL if NEMO_AVAILABLE else "base",
+        "default_model": SMART_MODEL_NAME if FASTER_WHISPER_AVAILABLE else (
+            PARAKEET_DEFAULT_MODEL if NEMO_AVAILABLE else "base"
+        ),
+        "recommended_language": "ru",
         "engines": {
             "faster-whisper": {
                 "available": FASTER_WHISPER_AVAILABLE,
                 "selectable": FASTER_WHISPER_AVAILABLE,
-                "default_model": "base",
-                "label": "Faster Whisper word timestamps",
+                "default_model": SMART_MODEL_NAME,
+                "label": "ScriptCut Smart Transcript",
                 "first_class": True,
+                "profiles": {
+                    "smart": "large-v3-turbo on NVIDIA GPU, small on CPU",
+                    "base": "fastest practical local draft",
+                    "large-v3-turbo": "maximum speed/accuracy balance on a capable GPU",
+                    "large-v3": "maximum accuracy, slowest and largest",
+                },
                 "download_behavior": "Selected speech model downloads automatically on first use.",
                 "unavailable_reason": (
                     None
@@ -278,19 +378,36 @@ def get_transcription_engine_status() -> dict:
     }
 
 
-def _normalize_model_for_engine(model_name: str, engine: TranscriptionEngine) -> str:
+def _select_smart_faster_whisper_model(device: str) -> str:
+    override = os.environ.get("SCRIPTCUT_SMART_TRANSCRIPTION_MODEL", "").strip()
+    if override:
+        return override
+    # large-v3-turbo is the strongest practical long-form default when
+    # CTranslate2 can use an NVIDIA GPU. On CPU, small is a meaningful accuracy
+    # upgrade over the old base default without making hour-long VODs unusable.
+    return "large-v3-turbo" if device.startswith("cuda") else "small"
+
+
+def _normalize_model_for_engine(
+    model_name: str,
+    engine: TranscriptionEngine,
+    device: str = "cpu",
+) -> str:
     if engine == "parakeet" and model_name in WHISPER_MODEL_NAMES:
         return PARAKEET_DEFAULT_MODEL
+    if engine == "faster-whisper" and model_name == SMART_MODEL_NAME:
+        return _select_smart_faster_whisper_model(device)
     return model_name
 
 
 def transcribe_audio(
     file_path: str,
-    model_name: str = "base",
+    model_name: str = SMART_MODEL_NAME,
     engine: TranscriptionEngine = "auto",
     use_gpu: bool = True,
     use_cache: bool = True,
     language: Optional[str] = None,
+    progress_callback: Optional[Callable[[int, str], None]] = None,
 ) -> dict:
     """
     Transcribe audio/video file and return word-level timestamps.
@@ -303,8 +420,10 @@ def transcribe_audio(
         raise FileNotFoundError(str(file_path))
 
     resolved_engine = _resolve_engine(engine)
-    model_name = _normalize_model_for_engine(model_name, resolved_engine)
-    cache_operation = f"transcribe_{resolved_engine}"
+    requested_model = model_name
+    device = _get_device(use_gpu)
+    model_name = _normalize_model_for_engine(model_name, resolved_engine, device)
+    cache_operation = f"transcribe_v3_{resolved_engine}_{language or 'auto'}"
 
     if use_cache:
         cached = load_from_cache(file_path, model_name, cache_operation)
@@ -321,9 +440,8 @@ def transcribe_audio(
         temporary_audio_path = extract_audio(file_path)
         audio_path = temporary_audio_path
 
-    device = _get_device(use_gpu)
     try:
-        model = _load_model(model_name, device, resolved_engine)
+        model = _load_model(model_name, device, resolved_engine, progress_callback)
 
         logger.info(f"Transcribing with {resolved_engine}: {file_path}")
 
@@ -331,7 +449,12 @@ def transcribe_audio(
             result = _transcribe_parakeet(model, str(audio_path))
         elif resolved_engine == "faster-whisper":
             try:
-                result = _transcribe_faster_whisper(model, str(audio_path), language)
+                result = _transcribe_faster_whisper(
+                    model,
+                    str(audio_path),
+                    language,
+                    progress_callback,
+                )
             except (RuntimeError, ValueError) as error:
                 if not device.startswith("cuda") or not _is_faster_whisper_acceleration_error(error):
                     raise
@@ -340,8 +463,24 @@ def transcribe_audio(
                     error,
                 )
                 _model_cache.pop(f"{resolved_engine}_{model_name}_{device}", None)
-                cpu_model = _load_model(model_name, "cpu", resolved_engine)
-                result = _transcribe_faster_whisper(cpu_model, str(audio_path), language)
+                cpu_model_name = (
+                    _select_smart_faster_whisper_model("cpu")
+                    if requested_model == SMART_MODEL_NAME
+                    else model_name
+                )
+                cpu_model = _load_model(
+                    cpu_model_name,
+                    "cpu",
+                    resolved_engine,
+                    progress_callback,
+                )
+                result = _transcribe_faster_whisper(
+                    cpu_model,
+                    str(audio_path),
+                    language,
+                    progress_callback,
+                )
+                model_name = cpu_model_name
         elif resolved_engine == "whisperx":
             result = _transcribe_whisperx(model, str(audio_path), device, language)
         else:
@@ -354,6 +493,8 @@ def transcribe_audio(
 
     result["engine"] = resolved_engine
     result["model"] = model_name
+    result["requested_model"] = requested_model
+    result["quality_profile"] = "smart" if requested_model == SMART_MODEL_NAME else "custom"
 
     if use_cache:
         save_to_cache(file_path, result, model_name, cache_operation)
@@ -361,17 +502,41 @@ def transcribe_audio(
     return result
 
 
-def _transcribe_faster_whisper(model, audio_path: str, language: Optional[str]) -> dict:
+def _transcribe_faster_whisper(
+    model,
+    audio_path: str,
+    language: Optional[str],
+    progress_callback: Optional[Callable[[int, str], None]] = None,
+) -> dict:
+    is_russian = language in {"ru", "russian", "Русский"}
     options = {
         "word_timestamps": True,
         "vad_filter": True,
+        "vad_parameters": {
+            "threshold": 0.45,
+            "min_speech_duration_ms": 120,
+            "min_silence_duration_ms": 280,
+            "speech_pad_ms": 240,
+        },
+        "beam_size": 5,
+        "best_of": 5,
+        "patience": 1.0,
+        "temperature": [0.0, 0.2, 0.4],
+        "condition_on_previous_text": True,
+        "hallucination_silence_threshold": 2.0,
+        "language_detection_segments": 3,
     }
     if language:
         options["language"] = language
+    if is_russian:
+        options["initial_prompt"] = RUSSIAN_CONTEXT_PROMPT
+        options["hotwords"] = RUSSIAN_PROFANITY_HOTWORDS
 
     segment_iterator, info = model.transcribe(audio_path, **options)
     words = []
     segments = []
+    duration = max(float(getattr(info, "duration", 0) or 0), 0.001)
+    last_reported_progress = -1
     for segment_id, segment in enumerate(segment_iterator):
         segment_words = []
         for item in segment.words or []:
@@ -392,11 +557,18 @@ def _transcribe_faster_whisper(model, audio_path: str, language: Optional[str]) 
             "text": str(segment.text or "").strip(),
             "words": segment_words,
         })
+        if progress_callback:
+            percent = min(72, max(10, int(10 + (float(segment.end or 0) / duration) * 62)))
+            if percent > last_reported_progress:
+                progress_callback(percent, f"Расшифровка: {percent}% · точные тайминги слов")
+                last_reported_progress = percent
 
     return {
         "words": words,
         "segments": segments,
         "language": str(getattr(info, "language", None) or language or "auto"),
+        "language_probability": round(float(getattr(info, "language_probability", 0) or 0), 3),
+        "duration_after_vad": round(float(getattr(info, "duration_after_vad", duration) or duration), 3),
     }
 
 

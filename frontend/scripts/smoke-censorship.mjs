@@ -19,7 +19,7 @@ const module = { exports: {} };
 const run = new Function('exports', 'module', 'require', compiled.outputText);
 run(module.exports, module, require);
 
-const { findCensorMatches, parseCustomPhrases } = module.exports;
+const { findCensorMatches, normalizeToken, parseCustomPhrases } = module.exports;
 
 const words = [
   { word: 'Это', start: 0, end: 0.3, confidence: 1 },
@@ -48,3 +48,35 @@ assert.deepEqual(
   findCensorMatches(words, '', false),
   [],
 );
+
+const difficultRussianWords = [
+  { word: 'бл*я-я-ять', start: 0, end: 0.4, confidence: 0.72 },
+  { word: 'это', start: 0.4, end: 0.7, confidence: 0.98 },
+  { word: 'на', start: 0.7, end: 0.85, confidence: 0.91 },
+  { word: 'х', start: 0.85, end: 0.92, confidence: 0.61 },
+  { word: 'у', start: 0.92, end: 1.0, confidence: 0.62 },
+  { word: 'й', start: 1.0, end: 1.08, confidence: 0.63 },
+  { word: 'заебааал', start: 1.08, end: 1.5, confidence: 0.76 },
+  { word: 'песдец', start: 1.5, end: 1.9, confidence: 0.68 },
+  { word: 'страхуй', start: 1.9, end: 2.2, confidence: 0.99 },
+  { word: 'ребенок', start: 2.2, end: 2.5, confidence: 0.99 },
+];
+
+const difficultMatches = findCensorMatches(difficultRussianWords, '');
+assert.deepEqual(
+  difficultMatches.map((match) => [
+    match.startWordIndex,
+    match.endWordIndex,
+    match.matchKind,
+  ]),
+  [
+    [0, 0, 'obfuscated'],
+    [2, 5, 'split'],
+    [6, 6, 'exact'],
+    [7, 7, 'exact'],
+  ],
+);
+assert.equal(difficultMatches[0].startTime, 0);
+assert.equal(difficultMatches[0].endTime, 0.52);
+assert.equal(normalizeToken('XУЙ'), 'хуй');
+assert.equal(normalizeToken('6ЛЯДЬ'), 'блядь');

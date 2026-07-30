@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, useRef } from 'react';
+import { useStore } from 'zustand';
 import { useEditorStore } from './store/editorStore';
 import { useAIStore } from './store/aiStore';
 import VideoPlayer from './components/VideoPlayer';
@@ -39,6 +40,9 @@ import {
   Info,
   LogOut,
   MoreHorizontal,
+  X,
+  Undo2,
+  Redo2,
 } from 'lucide-react';
 import { RELEASE_LINKS } from './utils/releaseInfo';
 
@@ -51,6 +55,7 @@ type TranscriptionEngine = 'auto' | 'faster-whisper' | 'whisperx' | 'whisper' | 
 type TranscriptionEngineStatus = {
   default_engine?: TranscriptionEngine | null;
   default_model?: string;
+  recommended_language?: string;
   engines?: Record<string, {
     available: boolean;
     selectable?: boolean;
@@ -75,15 +80,19 @@ type SystemChecksResponse = {
 
 const TRANSCRIPTION_MODELS: Record<TranscriptionEngine, Array<{ value: string; label: string }>> = {
   auto: [
-    { value: 'base', label: 'Auto best available' },
+    { value: 'smart', label: 'Smart · оптимальный баланс' },
+    { value: 'base', label: 'Быстрый черновик' },
     { value: 'small', label: 'small (better accuracy)' },
     { value: 'medium', label: 'medium (high accuracy, slower)' },
+    { value: 'large-v3-turbo', label: 'Max · large-v3-turbo' },
   ],
   'faster-whisper': [
+    { value: 'smart', label: 'Smart · оптимально для этого компьютера' },
     { value: 'tiny', label: 'tiny (fastest)' },
-    { value: 'base', label: 'base (recommended)' },
+    { value: 'base', label: 'base (быстрый черновик)' },
     { value: 'small', label: 'small (better accuracy)' },
     { value: 'medium', label: 'medium (high accuracy, slower)' },
+    { value: 'large-v3-turbo', label: 'large-v3-turbo (лучший баланс GPU)' },
     { value: 'large-v3', label: 'large-v3 (best, very slow)' },
   ],
   whisperx: [
@@ -114,6 +123,24 @@ interface BackendJob<T> {
   error?: string;
 }
 
+function friendlyTranscriptionError(message: string): string {
+  const normalized = message.toLowerCase();
+  if (
+    normalized.includes('ssl') ||
+    normalized.includes('unexpected_eof') ||
+    normalized.includes('hugging face') ||
+    normalized.includes('huggingface') ||
+    normalized.includes('snapshot folder') ||
+    normalized.includes('trying to locate the files on the hub')
+  ) {
+    return 'Не удалось скачать локальную модель речи. Проверьте интернет и нажмите «Повторить расшифровку»: уже загруженная часть сохранена, поэтому скачивание продолжится, а не начнётся заново. API-ключ не нужен.';
+  }
+  if (normalized.includes('canceled') || normalized.includes('cancelled')) {
+    return 'Расшифровка отменена';
+  }
+  return message;
+}
+
 export default function App() {
   const {
     videoPath,
@@ -129,10 +156,13 @@ export default function App() {
     backendUrl,
   } = useEditorStore();
 
-  const [activePanel, setActivePanel] = useState<Panel>(null);
+  const [activePanel, setActivePanel] = useState<Panel>(
+    () => (window.innerWidth >= 1280 ? 'ai' : null),
+  );
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [transcriptionEngine, setTranscriptionEngine] = useState<TranscriptionEngine>('auto');
-  const [transcriptionModel, setTranscriptionModel] = useState('base');
+  const [transcriptionModel, setTranscriptionModel] = useState('smart');
+  const [transcriptionLanguage, setTranscriptionLanguage] = useState('ru');
   const [transcriptionEngineStatus, setTranscriptionEngineStatus] = useState<TranscriptionEngineStatus | null>(null);
   const [transcriptionMessage, setTranscriptionMessage] = useState('');
   const [transcriptionError, setTranscriptionError] = useState('');
@@ -154,6 +184,14 @@ export default function App() {
     () => window.localStorage.getItem(ONBOARDING_DISMISSED_KEY) === 'true',
   );
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const canUndo = useStore(
+    useEditorStore.temporal,
+    (state) => state.pastStates.length > 0,
+  );
+  const canRedo = useStore(
+    useEditorStore.temporal,
+    (state) => state.futureStates.length > 0,
+  );
 
   useKeyboardShortcuts();
   const autosave = useProjectAutosave();
@@ -179,6 +217,7 @@ export default function App() {
         if (status.default_engine && status.default_model) {
           setTranscriptionEngine(status.default_engine);
           setTranscriptionModel(status.default_model);
+          setTranscriptionLanguage(status.recommended_language || 'ru');
         }
       })
       .catch(() => {
@@ -438,7 +477,7 @@ export default function App() {
 
   const transcribeVideo = async (path: string, intent?: WorkflowIntent) => {
     setTranscribing(true, 0);
-    setTranscriptionMessage('Starting transcription');
+    setTranscriptionMessage('Запускаем Smart Transcript');
     setTranscriptionError('');
     setTranscriptionLogs([]);
     setLastTranscriptionJobId('');
@@ -446,7 +485,12 @@ export default function App() {
       const res = await fetch(`${backendUrl}/jobs/transcribe`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ file_path: path, engine: transcriptionEngine, model: transcriptionModel }),
+        body: JSON.stringify({
+          file_path: path,
+          engine: transcriptionEngine,
+          model: transcriptionModel,
+          language: transcriptionLanguage || null,
+        }),
       });
       if (!res.ok) {
         let detail = res.statusText;
@@ -462,11 +506,11 @@ export default function App() {
       setLastTranscriptionJobId(jobId);
       const data = await pollTranscriptionJob(jobId);
       setTranscription(data);
-      if (intent) setActivePanel(intent === 'short' ? 'ai' : 'export');
+      if (intent === 'short') setActivePanel('ai');
     } catch (err) {
       console.error('Transcription error:', err);
       const message = err instanceof Error ? err.message : String(err);
-      setTranscriptionError(message.toLowerCase().includes('canceled') ? 'Transcription canceled' : message);
+      setTranscriptionError(friendlyTranscriptionError(message));
     } finally {
       setTranscriptionMessage('');
       setTranscribing(false);
@@ -488,7 +532,7 @@ export default function App() {
   const retryTranscription = async () => {
     if (!lastTranscriptionJobId) return;
     setTranscriptionError('');
-    setTranscriptionMessage('Retrying transcription');
+    setTranscriptionMessage('Повторяем расшифровку');
     setTranscribing(true, 1);
     try {
       const res = await fetch(`${backendUrl}/jobs/${lastTranscriptionJobId}/retry`, { method: 'POST' });
@@ -499,7 +543,7 @@ export default function App() {
       setTranscription(data);
     } catch (err) {
       console.error('Transcription retry error:', err);
-      setTranscriptionError(err instanceof Error ? err.message : String(err));
+      setTranscriptionError(friendlyTranscriptionError(err instanceof Error ? err.message : String(err)));
     } finally {
       setTranscriptionMessage('');
       setTranscribing(false);
@@ -536,7 +580,7 @@ export default function App() {
 
   if (!videoPath) {
     return (
-      <div className="h-screen flex flex-col items-center justify-center gap-8 bg-editor-bg px-6">
+      <div className="scriptcut-empty h-screen flex flex-col items-center justify-start gap-7 overflow-y-auto bg-editor-bg px-6 py-8">
         {!IS_ELECTRON && (
           <input
             ref={fileInputRef}
@@ -550,26 +594,25 @@ export default function App() {
           <button
             type="button"
             onClick={handleExit}
-            title="Exit ScriptCut"
+            title="Закрыть ScriptCut"
             className="absolute right-4 top-4 flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium text-editor-text-muted transition-colors hover:bg-editor-surface hover:text-editor-text"
           >
             <LogOut className="h-4 w-4" />
-            Exit
+            Выход
           </button>
         )}
-        <div className="flex flex-col items-center gap-3">
+        <div className="order-1 flex flex-col items-center gap-3">
           <img
             src="./brand/scriptcut-mark.svg"
             alt=""
-            className="h-16 w-16"
+            className="h-14 w-14"
           />
-          <img
-            src="./brand/scriptcut-wordmark.svg"
-            alt="ScriptCut"
-            className="h-auto w-[220px] max-w-full"
-          />
-          <p className="text-editor-text-muted text-sm max-w-sm text-center">
-            Open-source text-based video editing powered by AI.
+          <div className="text-[2rem] font-medium tracking-[-0.035em] text-editor-text">
+            ScriptCut
+          </div>
+          <p className="text-editor-text-muted text-sm max-w-md text-center leading-6">
+            Откройте запись стрима. Smart Transcript превратит речь в монтаж,
+            который можно проверить слово за словом.
           </p>
         </div>
 
@@ -584,8 +627,8 @@ export default function App() {
           />
         )}
 
-        <details className="w-full max-w-md rounded border border-editor-border bg-editor-surface px-3 py-2 text-xs text-editor-text-muted">
-          <summary className="cursor-pointer text-center text-[11px]">Transcription settings</summary>
+        <details className="order-4 w-full max-w-xl rounded border border-editor-border bg-editor-surface px-3 py-2 text-xs text-editor-text-muted">
+          <summary className="cursor-pointer text-center text-[11px]">Настройки расшифровки</summary>
           <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
             <select
               value={transcriptionEngine}
@@ -594,15 +637,16 @@ export default function App() {
                 setTranscriptionEngine(engine);
                 setTranscriptionModel(
                   transcriptionEngineStatus?.engines?.[engine]?.default_model ||
+                  TRANSCRIPTION_MODELS[engine].find((model) => model.value === 'smart')?.value ||
                   TRANSCRIPTION_MODELS[engine].find((model) => model.value === 'base')?.value ||
                   TRANSCRIPTION_MODELS[engine][0].value,
                 );
               }}
               className="px-3 py-1.5 bg-editor-bg border border-editor-border rounded-md text-xs text-editor-text focus:outline-none focus:border-editor-accent"
             >
-              <option value="auto">Auto best available</option>
+              <option value="auto">Smart · выбрать лучший движок</option>
               {([
-                ['faster-whisper', 'Faster Whisper (recommended)'],
+                ['faster-whisper', 'Faster Whisper (рекомендуется)'],
                 ['parakeet', 'Parakeet TDT v3 multilingual'],
                 ['whisperx', 'WhisperX aligned'],
                 ['whisper', 'Whisper fallback'],
@@ -611,7 +655,7 @@ export default function App() {
                 const unavailable = !!transcriptionEngineStatus && !engineInfo?.available;
                 return (
                   <option key={engine} value={engine} disabled={unavailable}>
-                    {label}{unavailable ? ' — not included in this build' : ''}
+                    {label}{unavailable ? ' — не установлен' : ''}
                   </option>
                 );
               })}
@@ -627,31 +671,45 @@ export default function App() {
                 </option>
               ))}
             </select>
+            <select
+              value={transcriptionLanguage}
+              onChange={(e) => setTranscriptionLanguage(e.target.value)}
+              className="px-3 py-1.5 bg-editor-bg border border-editor-border rounded-md text-xs text-editor-text focus:outline-none focus:border-editor-accent"
+              aria-label="Transcription language"
+            >
+              <option value="ru">Русский · точнее и лучше ловит мат</option>
+              <option value="">Определить автоматически</option>
+              <option value="en">English</option>
+              <option value="uk">Українська</option>
+              <option value="de">Deutsch</option>
+              <option value="fr">Français</option>
+              <option value="es">Español</option>
+            </select>
           </div>
           <p className="mt-2 text-center text-[10px] leading-4">
             {transcriptionEngine === 'auto'
-              ? 'Auto uses the best installed local engine. Its selected speech model downloads automatically on first use.'
+              ? 'Smart Transcript сам выберет сильную модель под компьютер. Для русского включаются дословный режим, VAD и подсказки для сложной разговорной лексики.'
               : transcriptionEngineStatus?.engines?.[transcriptionEngine]?.available
                 ? transcriptionEngineStatus.engines[transcriptionEngine].download_behavior ||
-                  'The selected speech model downloads automatically on first use.'
+                  'Выбранная модель речи скачается автоматически при первом запуске.'
                 : transcriptionEngineStatus?.engines?.[transcriptionEngine]?.unavailable_reason ||
-                  'This optional engine is not included in the desktop build. Choose Faster Whisper.'}
+                  'Этот дополнительный движок не входит в сборку. Выберите Faster Whisper.'}
           </p>
           {transcriptionEngineStatus && (
             <p className="mt-1 text-center text-[10px] leading-4 text-editor-warning">
-              Disabled engines are separate program components. Downloading a model file does not install them.
+              Неактивные движки — отдельные компоненты программы. Скачивание файла модели их не устанавливает.
             </p>
           )}
         </details>
 
         {IS_ELECTRON ? (
-          <div className="flex flex-col items-center gap-3">
+          <div className="order-2 flex flex-col items-center gap-3">
             {recoveryCandidate && (
               <div className="w-full max-w-md rounded-lg border border-editor-warning/30 bg-editor-warning/10 p-3 text-left">
                 <div className="flex items-start gap-2">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-editor-warning" />
                   <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium text-editor-text">Recover autosaved project</div>
+                    <div className="text-sm font-medium text-editor-text">Восстановить автосохранение</div>
                     <div className="mt-1 truncate text-[11px] text-editor-text-muted">
                       {recoveryCandidate.videoPath.split(/[\\/]/).pop()} · {new Date(recoveryCandidate.modifiedAt).toLocaleString()}
                     </div>
@@ -663,7 +721,7 @@ export default function App() {
                         onClick={() => recoverAutosave(recoveryCandidate)}
                         className="rounded bg-editor-accent px-3 py-1.5 text-xs font-medium text-white hover:bg-editor-accent-hover"
                       >
-                        Recover
+                        Восстановить
                       </button>
                       {getAutosaveSnapshotPaths(recoveryCandidate.videoPath)
                         .slice(1, (recoveryCandidate.snapshotCount || 0) + 1)
@@ -673,14 +731,14 @@ export default function App() {
                           onClick={() => recoverAutosave(recoveryCandidate, index + 1)}
                           className="rounded bg-editor-surface px-3 py-1.5 text-xs text-editor-text-muted hover:text-editor-text"
                         >
-                          Earlier {index + 1}
+                          Ранее {index + 1}
                         </button>
                       ))}
                       <button
                         onClick={() => setRecoveryCandidate(null)}
                         className="rounded bg-editor-surface px-3 py-1.5 text-xs text-editor-text-muted hover:text-editor-text"
                       >
-                        Dismiss
+                        Пропустить
                       </button>
                     </div>
                   </div>
@@ -689,7 +747,7 @@ export default function App() {
             )}
             {recentProjects.length > 0 && (
               <div className="w-full max-w-md rounded-lg border border-editor-border bg-editor-surface p-3 text-left">
-                <div className="text-sm font-medium text-editor-text">Recent projects</div>
+                <div className="text-sm font-medium text-editor-text">Недавние проекты</div>
                 <div className="mt-2 space-y-1">
                   {recentProjects.map((project) => (
                     <button
@@ -701,7 +759,7 @@ export default function App() {
                       <span className="min-w-0">
                         <span className="block truncate text-xs text-editor-text">{project.videoPath.split(/[\\/]/).pop()}</span>
                         <span className="block truncate text-[10px] text-editor-text-muted">
-                          {project.source === 'autosave' ? 'Recovered snapshot' : 'Saved project'} · {new Date(project.modifiedAt).toLocaleString()}
+                          {project.source === 'autosave' ? 'Автосохранение' : 'Сохранённый проект'} · {new Date(project.modifiedAt).toLocaleString()}
                         </span>
                       </span>
                       <FileInput className="h-3.5 w-3.5 shrink-0 text-editor-text-muted" />
@@ -713,14 +771,14 @@ export default function App() {
             <div className="grid w-full max-w-md grid-cols-1 gap-2 sm:grid-cols-2">
               <StartWorkflowButton
                 icon={<FileVideo className="h-4 w-4" />}
-                title="Edit full video"
-                detail="Open file and start transcription"
+                title="Открыть полный стрим"
+                detail="Выбрать файл и запустить Smart Transcript"
                 onClick={() => void handleOpenFile('full-video')}
               />
               <StartWorkflowButton
                 icon={<Smartphone className="h-4 w-4" />}
-                title="Create a short"
-                detail="9:16 output with creator captions"
+                title="Сделать вертикальный клип"
+                detail="Формат 9:16 и динамические субтитры"
                 onClick={() => void handleOpenFile('short')}
                 primary
               />
@@ -730,39 +788,39 @@ export default function App() {
               className="flex items-center gap-2 px-4 py-2 text-sm text-editor-text-muted hover:text-editor-text hover:bg-editor-surface rounded-lg transition-colors"
             >
               <FileInput className="w-4 h-4" />
-              Load Project
+              Открыть проект
             </button>
           </div>
         ) : (
-          <div className="w-full max-w-xl space-y-4">
+          <div className="order-2 w-full max-w-xl space-y-4">
             <div
               onDragOver={(e) => e.preventDefault()}
               onDrop={handleBrowserDrop}
-              className="group flex min-h-48 flex-col items-center justify-center gap-4 rounded-lg border border-dashed border-editor-border bg-editor-surface/45 px-6 py-8 text-center transition-colors hover:border-editor-accent/60 hover:bg-editor-surface/70"
+              className="scriptcut-dropzone group flex min-h-48 flex-col items-center justify-center gap-4 rounded-lg border border-editor-border px-6 py-8 text-center transition-colors hover:border-editor-accent"
             >
               <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-editor-accent/15 text-editor-accent">
                 {isBrowserUploading ? <Loader2 className="h-6 w-6 animate-spin" /> : <FileVideo className="h-6 w-6" />}
               </div>
               <div className="space-y-1">
                 <div className="text-sm font-medium text-editor-text">
-                  {isBrowserUploading ? 'Uploading media...' : 'Choose a video or audio file'}
+                  {isBrowserUploading ? 'Загружаем медиа…' : 'Выберите видео или аудио'}
                 </div>
                 <p className="mx-auto max-w-sm text-xs leading-5 text-editor-text-muted">
-                  Pick a file from your folders or drop it here. ScriptCut uploads it to the local backend before transcription.
+                  Выберите файл или перетащите его сюда. Обработка и расшифровка выполняются локально.
                 </p>
               </div>
               <div className="grid w-full max-w-md grid-cols-1 gap-2 sm:grid-cols-2">
                 <StartWorkflowButton
                   icon={isBrowserUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileVideo className="h-4 w-4" />}
-                  title="Edit full video"
-                  detail="Choose file and start transcription"
+                  title="Открыть полный стрим"
+                  detail="Выбрать файл и запустить Smart Transcript"
                   onClick={() => void handleOpenFile('full-video')}
                   disabled={isBrowserUploading}
                 />
                 <StartWorkflowButton
                   icon={<Smartphone className="h-4 w-4" />}
-                  title="Create a short"
-                  detail="Set up vertical output immediately"
+                  title="Сделать вертикальный клип"
+                  detail="Сразу настроить формат 9:16"
                   onClick={() => void handleOpenFile('short')}
                   disabled={isBrowserUploading}
                   primary
@@ -770,7 +828,7 @@ export default function App() {
               </div>
               {browserUploadName && (
                 <div className="max-w-full truncate text-[11px] text-editor-text-muted">
-                  {isBrowserUploading ? 'Uploading' : 'Last selected'}: {browserUploadName}
+                  {isBrowserUploading ? 'Загружается' : 'Последний файл'}: {browserUploadName}
                 </div>
               )}
             </div>
@@ -780,7 +838,7 @@ export default function App() {
               </div>
             )}
             <p className="text-[11px] text-editor-text-muted text-center">
-              Supported: MP4, AVI, MOV, MKV, WebM, M4A, MP3, WAV, FLAC
+              Поддерживаются: MP4, AVI, MOV, MKV, WebM, M4A, MP3, WAV, FLAC
             </p>
           </div>
         )}
@@ -789,7 +847,7 @@ export default function App() {
   }
 
   return (
-    <div className="h-screen flex flex-col bg-editor-bg overflow-hidden">
+    <div className="scriptcut-shell h-screen flex flex-col bg-editor-bg overflow-hidden">
       {!IS_ELECTRON && (
         <input
           ref={fileInputRef}
@@ -800,20 +858,31 @@ export default function App() {
         />
       )}
       {/* Top bar */}
-      <header className="h-12 flex items-center justify-between px-4 border-b border-editor-border shrink-0">
+      <header className="scriptcut-topbar h-14 flex items-center justify-between px-4 border-b border-editor-border shrink-0">
         <div className="flex items-center gap-3">
-          <img src="./brand/scriptcut-mark.svg" alt="ScriptCut" className="h-5 w-5" />
+          <div className="flex items-center gap-2.5">
+            <img src="./brand/scriptcut-mark.svg" alt="" className="h-6 w-6" />
+            <span className="text-sm font-semibold tracking-[-0.02em] text-editor-text">ScriptCut</span>
+          </div>
+          <div className="h-5 w-px bg-editor-border" />
           <div className="min-w-0">
-            <span className="block max-w-[300px] truncate text-sm font-medium">
-              {videoPath.split(/[\\/]/).pop()}
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="block max-w-[280px] truncate text-xs font-medium">
+                {videoPath.split(/[\\/]/).pop()}
+              </span>
+              {videoPath.startsWith('/demo/') && (
+                <span className="border border-editor-accent/40 px-1.5 py-0.5 text-[9px] font-medium uppercase tracking-[0.08em] text-editor-accent">
+                  синтетическое демо
+                </span>
+              )}
+            </div>
             <AutosaveStatus autosave={autosave} />
           </div>
         </div>
         <div className="flex items-center gap-1">
           <ToolbarButton
             icon={<FolderOpen className="w-4 h-4" />}
-            label="Open"
+            label="Открыть"
             onClick={handleOpenFile}
             disabled={isBrowserUploading}
           />
@@ -824,10 +893,23 @@ export default function App() {
                 ? 'Saved'
                 : manualSaveStatus === 'error'
                   ? 'Save failed'
-                  : 'Save Project'
+                  : 'Сохранить'
             }
             onClick={handleSaveProject}
             disabled={words.length === 0 || manualSaveStatus === 'saving'}
+          />
+          <div className="mx-1 h-5 w-px bg-editor-border" />
+          <ToolbarButton
+            icon={<Undo2 className="w-4 h-4" />}
+            label="Отменить"
+            onClick={() => useEditorStore.temporal.getState().undo()}
+            disabled={!canUndo}
+          />
+          <ToolbarButton
+            icon={<Redo2 className="w-4 h-4" />}
+            label="Повторить"
+            onClick={() => useEditorStore.temporal.getState().redo()}
+            disabled={!canRedo}
           />
           <ToolbarButton
             icon={<Sparkles className="w-4 h-4" />}
@@ -838,10 +920,11 @@ export default function App() {
           />
           <ToolbarButton
             icon={<Download className="w-4 h-4" />}
-            label="Export"
+            label="Экспорт"
             active={activePanel === 'export'}
             onClick={() => togglePanel('export')}
             disabled={words.length === 0}
+            primary
           />
           <div className="relative">
             <button
@@ -894,34 +977,34 @@ export default function App() {
       </header>
 
       {/* Main content */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="scriptcut-workspace flex-1 flex overflow-hidden">
         {/* Left: video + transcript */}
         <div className="flex-1 flex flex-col min-w-0">
           <div className="flex-1 flex min-h-0">
             {/* Video player */}
-            <div className="w-1/2 p-3 flex items-center justify-center bg-black/20">
+            <section className="scriptcut-video-pane w-[34%] min-w-[320px] max-w-[520px] p-3 flex items-center justify-center bg-black/20">
               <VideoPlayer />
-            </div>
+            </section>
 
             {/* Transcript */}
-            <div className="w-1/2 border-l border-editor-border flex flex-col min-h-0">
+            <section className="scriptcut-transcript-pane flex-1 border-l border-editor-border flex flex-col min-h-0">
               {isTranscribing ? (
                 <div className="flex-1 flex flex-col items-center justify-center gap-4">
                   <Loader2 className="w-8 h-8 text-editor-accent animate-spin" />
                   <p className="text-sm text-editor-text-muted">
-                    {transcriptionMessage || 'Transcribing'}... {Math.round(transcriptionProgress)}%
+                    {transcriptionMessage || 'Расшифровываем'}… {Math.round(transcriptionProgress)}%
                   </p>
                   {lastTranscriptionJobId && (
                     <button
                       onClick={cancelTranscription}
                       className="rounded bg-editor-border px-3 py-2 text-xs text-editor-text-muted hover:bg-editor-surface hover:text-editor-text"
                     >
-                      Cancel transcription
+                      Отменить расшифровку
                     </button>
                   )}
                   {transcriptionLogs.length > 0 && (
                     <details className="w-full max-w-md rounded border border-editor-border bg-editor-surface p-2 text-left text-[10px] text-editor-text-muted">
-                      <summary className="cursor-pointer text-editor-text">Job log</summary>
+                      <summary className="cursor-pointer text-editor-text">Журнал задачи</summary>
                       <div className="mt-2 max-h-32 space-y-1 overflow-y-auto">
                         {transcriptionLogs.slice(-8).map((entry, index) => (
                           <div key={`${entry.time}-${index}`} className="break-words">
@@ -944,12 +1027,12 @@ export default function App() {
                       onClick={retryTranscription}
                       className="rounded bg-editor-accent px-3 py-2 text-sm font-medium hover:bg-editor-accent-hover"
                     >
-                      Retry transcription
+                      Повторить расшифровку
                     </button>
                   )}
                   {transcriptionLogs.length > 0 && (
                     <details className="w-full max-w-md rounded border border-editor-border bg-editor-surface p-2 text-left text-[10px] text-editor-text-muted">
-                      <summary className="cursor-pointer text-editor-text">Job log</summary>
+                      <summary className="cursor-pointer text-editor-text">Журнал задачи</summary>
                       <div className="mt-2 max-h-32 space-y-1 overflow-y-auto">
                         {transcriptionLogs.slice(-8).map((entry, index) => (
                           <div key={`${entry.time}-${index}`} className="break-words">
@@ -962,28 +1045,56 @@ export default function App() {
                 </div>
               ) : (
                 <div className="flex-1 flex flex-col items-center justify-center gap-2 px-6 text-center">
-                  <div className="text-sm font-medium text-editor-text">Transcript will appear here</div>
+                  <div className="text-sm font-medium text-editor-text">Здесь появится расшифровка</div>
                   <p className="max-w-sm text-xs leading-5 text-editor-text-muted">
-                    Open media to transcribe it. After transcription, edit words directly to cut video and use the timeline for review.
+                    Откройте медиа. После расшифровки выделяйте слова прямо в тексте, а результат проверяйте на таймлайне.
                   </p>
                 </div>
               )}
-            </div>
+            </section>
           </div>
 
           {/* Waveform timeline */}
-          <div className="h-32 border-t border-editor-border shrink-0">
+          <div className="scriptcut-timeline h-48 border-t border-editor-border shrink-0">
             <WaveformTimeline />
           </div>
         </div>
 
         {/* Right panel (AI / Export / Settings) */}
         {activePanel && (
-          <div className="w-80 border-l border-editor-border overflow-y-auto shrink-0">
-            {activePanel === 'ai' && <AIPanel />}
-            {activePanel === 'export' && <ExportDialog />}
-            {activePanel === 'settings' && <SettingsPanel />}
-          </div>
+          <aside className="scriptcut-workbench w-[360px] border-l border-editor-border overflow-hidden shrink-0 flex flex-col">
+            <div className="flex h-11 shrink-0 items-center justify-between border-b border-editor-border px-4">
+              <div>
+                <div className="text-xs font-semibold text-editor-text">
+                  {activePanel === 'ai'
+                    ? 'Проверка и AI'
+                    : activePanel === 'export'
+                      ? 'Экспорт'
+                      : 'Настройки'}
+                </div>
+                <div className="text-[10px] text-editor-text-muted">
+                  {activePanel === 'ai'
+                    ? 'Предложения применяются только после проверки'
+                    : activePanel === 'export'
+                      ? 'Формат, субтитры и готовность файла'
+                      : 'Локальные движки и подключения'}
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActivePanel(null)}
+                className="flex h-7 w-7 items-center justify-center rounded text-editor-text-muted hover:bg-editor-surface hover:text-editor-text"
+                aria-label="Закрыть рабочую панель"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {activePanel === 'ai' && <AIPanel />}
+              {activePanel === 'export' && <ExportDialog />}
+              {activePanel === 'settings' && <SettingsPanel />}
+            </div>
+          </aside>
         )}
       </div>
     </div>
@@ -1039,7 +1150,7 @@ function FirstRunChecklist({
   };
 
   return (
-    <div className="w-full max-w-2xl rounded-lg border border-editor-border bg-editor-surface p-4 text-left shadow-lg">
+    <div className="order-3 w-full max-w-2xl rounded-lg border border-editor-border bg-editor-surface p-4 text-left">
       <div className="flex items-start justify-between gap-3">
         <div>
           <div className="text-sm font-semibold text-editor-text">Setup assistant</div>
@@ -1234,12 +1345,14 @@ function ToolbarButton({
   icon,
   label,
   active,
+  primary,
   onClick,
   disabled,
 }: {
   icon: React.ReactNode;
   label: string;
   active?: boolean;
+  primary?: boolean;
   onClick: () => void;
   disabled?: boolean;
 }) {
@@ -1248,8 +1361,10 @@ function ToolbarButton({
       onClick={onClick}
       disabled={disabled}
       title={label}
-      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
-        active
+      className={`flex h-8 items-center gap-1.5 rounded px-3 text-xs font-medium transition-colors ${
+        primary
+          ? 'bg-editor-accent text-editor-ink hover:bg-editor-accent-hover'
+          : active
           ? 'bg-editor-accent text-white'
           : 'text-editor-text-muted hover:text-editor-text hover:bg-editor-surface'
       } ${disabled ? 'opacity-40 cursor-not-allowed' : ''}`}

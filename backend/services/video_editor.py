@@ -350,9 +350,16 @@ def _build_audio_trim_filter(index: int, segment: dict, muted_ranges: List[dict]
         elif muted.get("kind") == "bleep" and segment_duration > 0:
             tone_label = f"a{index}b{step}"
             mixed_label = f"a{index}bm{step}"
+            tone_duration = max(0.02, local_end - local_start)
+            fade_duration = min(0.015, tone_duration / 4)
+            fade_out_start = max(0, tone_duration - fade_duration)
+            delay_ms = max(0, round(local_start * 1000))
             chain += (
-                f"sine=frequency=1000:sample_rate=48000:duration={segment_duration:.3f},"
-                f"volume='if(between(t,{local_start:.3f},{local_end:.3f}),0.16,0)':eval=frame"
+                f"sine=frequency=1050:sample_rate=48000:duration={tone_duration:.3f},"
+                f"volume=0.18,"
+                f"afade=t=in:st=0:d={fade_duration:.3f},"
+                f"afade=t=out:st={fade_out_start:.3f}:d={fade_duration:.3f},"
+                f"adelay={delay_ms}:all=1"
                 f"[{tone_label}];"
                 f"[{current_label}][{tone_label}]amix=inputs=2:duration=first:normalize=0"
                 f"[{mixed_label}];"
